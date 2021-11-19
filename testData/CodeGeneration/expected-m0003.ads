@@ -18,10 +18,10 @@ with System;
 package CubedOS.m0003.API is
 
    type Message_Type is
-      (v76, 
+      (v75, 
+      v76, 
       v80, 
-      v79, 
-      v75);
+      v79);
 
    type v1 is new Lib.Quadruple_Octet;
 

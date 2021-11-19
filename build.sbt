@@ -3,20 +3,19 @@ enablePlugins(Antlr4Plugin)
 
 ThisBuild / organization  := "edu.vtc"
 ThisBuild / version       := "0.1.0-SNAPSHOT"
-ThisBuild / scalaVersion  := "2.12.8"
+ThisBuild / scalaVersion  := "2.13.7"
 ThisBuild / scalacOptions :=
   Seq("-encoding", "UTF-8",
       "-feature",
       "-deprecation",
       "-unchecked",
-      "-Ywarn-adapted-args",
+      "-Wunused:nowarn",
+      "-Xsource:3",
       "-Ywarn-dead-code",
-      "-Ywarn-infer-any",
-      "-Ywarn-unused-import",
       "-Ywarn-value-discard")
 
-libraryDependencies += "org.scalactic" %% "scalactic" % "3.0.5"
-libraryDependencies += "org.scalatest" %% "scalatest" % "3.0.5" % "test"
+libraryDependencies += "org.scalactic" %% "scalactic" % "3.2.10"
+libraryDependencies += "org.scalatest" %% "scalatest" % "3.2.10" % "test"
 
 logBuffered in Test := false
 
@@ -24,8 +23,8 @@ lazy val merc = (project in file("."))
   .settings(
     name := "Merc",
 
-    antlr4Version     in Antlr4 := "4.7.2",
-    antlr4PackageName in Antlr4 := Some("edu.vtc.merc"),
-    antlr4GenListener in Antlr4 := true,
-    antlr4GenVisitor  in Antlr4 := true
+    Antlr4 / antlr4Version     := "4.9.2",
+    Antlr4 / antlr4PackageName := Some("edu.vtc.merc"),
+    Antlr4 / antlr4GenListener := true,
+    Antlr4 / antlr4GenVisitor  := true
   )

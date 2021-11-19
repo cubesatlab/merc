@@ -13,7 +13,7 @@ class BodyGenerator(
   private var indentationLevel = 0
   private var typeOfModule = ""
 
-  private def doIndentation() {
+  private def doIndentation(): Unit = {
     for (i <- 0 until indentationLevel) {
       out.print("   ")
     }
@@ -65,7 +65,7 @@ class BodyGenerator(
     val lines = processTemplate()
     val replacementString = nameOfFile
     for (line <- lines) {
-      val newLine = line.replaceAllLiterally("%MODULENAME%", replacementString)
+      val newLine = line.replace("%MODULENAME%", replacementString)
       if (line.contains("%BULK%")) {
         indentationLevel += 1
         visitChildren(ctx)

@@ -178,7 +178,7 @@ class STPopulation(
           reporter.reportError(
             name.getSymbol.getLine,
             name.getSymbol.getCharPositionInLine + 1,
-            name + " is a reserved SPARK Ada word.")
+            n + " is a reserved SPARK Ada word.")
         }
         var nameT = ""
         if (ctx.declaration(x).children.get(0).getText == "opaque") {
@@ -424,7 +424,7 @@ class STPopulation(
           reporter.reportError(
             name.getSymbol.getLine,
             name.getSymbol.getCharPositionInLine + 1,
-            name + " is a reserved SPARK Ada word.")
+            n + " is a reserved SPARK Ada word.")
         }
         val t = TypeRep.IDERep(n)
         val c = ctx.value(x).CONSTANT().getText
@@ -439,7 +439,7 @@ class STPopulation(
           reporter.reportError(
             name.getSymbol.getLine,
             name.getSymbol.getCharPositionInLine + 1,
-            name + " is a reserved SPARK Ada word.")
+            n + " is a reserved SPARK Ada word.")
         }
         val t = TypeRep.IDERep(n)
         val c = "null"
@@ -582,7 +582,7 @@ class STPopulation(
           reporter.reportError(
             name.getSymbol.getLine,
             name.getSymbol.getCharPositionInLine + 1,
-            name + " is a reserved SPARK Ada word.")
+            n + " is a reserved SPARK Ada word.")
         }
         if (ctx.children.contains(ctx.range_constraint())) {
           val rc = visitRC(ctx.range_constraint())
@@ -882,7 +882,7 @@ class STPopulation(
           reporter.reportError(
             name.getSymbol.getLine,
             name.getSymbol.getCharPositionInLine + 1,
-            name + " is a reserved SPARK Ada word.")
+            n + " is a reserved SPARK Ada word.")
         }
         val t = TypeRep.EnumRep
         val p = enumP(ctx.enum_body())
@@ -897,7 +897,7 @@ class STPopulation(
           reporter.reportError(
             name.getSymbol.getLine,
             name.getSymbol.getCharPositionInLine + 1,
-            name + " is a reserved SPARK Ada word.")
+            n + " is a reserved SPARK Ada word.")
         }
         val t = TypeRep.StructRep
         val p = structP(ctx.struct_body())
@@ -918,7 +918,7 @@ class STPopulation(
           reporter.reportError(
             name.getSymbol.getLine,
             name.getSymbol.getCharPositionInLine + 1,
-            name + " is a reserved SPARK Ada word.")
+            n + " is a reserved SPARK Ada word.")
         }
         val t = TypeRep.MStructRep
         val p = structP(ctx.struct_body())
@@ -941,7 +941,7 @@ class STPopulation(
       reporter.reportError(
         name.getSymbol.getLine,
         name.getSymbol.getCharPositionInLine + 1,
-        name + " is a reserved SPARK Ada word.")
+        n + " is a reserved SPARK Ada word.")
     }
     val c = if (ctx.declaration().children.contains(ctx.declaration().CONSTANT())) {
       ctx.declaration().CONSTANT().getText
@@ -1117,7 +1117,7 @@ class STPopulation(
       reporter.reportError(
         name.getSymbol.getLine,
         name.getSymbol.getCharPositionInLine + 1,
-        name + " is a reserved SPARK Ada word.")
+        n + " is a reserved SPARK Ada word.")
     }
     val t = TypeRep.ConstRep
     val v = ctx.CONSTANT().getText
