@@ -1,8 +1,7 @@
 package edu.vtc.merc
 
 import java.io.{File, PrintStream}
-
-import org.antlr.v4.runtime._
+import org.antlr.v4.runtime.*
 
 class CodeGeneratorSpec extends UnitSpec {
 
@@ -36,7 +35,7 @@ class CodeGeneratorSpec extends UnitSpec {
     expectedSpecification: String,
     expectedBody: String)
 
-  "The sematics of the test files" should "have the indicated errors" in {
+  "The CodeGenerator" should "process MXDR files into SPARK packages" in {
     val testCases = Array(
       TestCase("m0001.mxdr", "expected-m0001.ads", "expected-m0001.adb"),
       TestCase("m0002.mxdr", "expected-m0002.ads", "expected-m0002.adb"),

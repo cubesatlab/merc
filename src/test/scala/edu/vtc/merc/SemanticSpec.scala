@@ -1,7 +1,7 @@
 package edu.vtc.merc
 
 import java.io.File
-import org.antlr.v4.runtime._
+import org.antlr.v4.runtime.*
 
 class SemanticSpec extends UnitSpec {
 
@@ -10,7 +10,7 @@ class SemanticSpec extends UnitSpec {
     expectedErrors  : Array[ExpectedMessage],
     expectedWarnings: Array[ExpectedMessage])
 
-  "The sematics of the test files" should "have the indicated errors" in {
+  "The SemanticAnalyzer" should "detect semantic errors in MXDR" in {
     val testCases = Array(
       TestCase("0001.mxdr",
         Array(ExpectedMessage(5, 22, "Invalid!: That Identifier already exists!")),

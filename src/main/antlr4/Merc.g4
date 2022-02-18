@@ -4,9 +4,52 @@ grammar Merc;
 /* Grammar */
 /* ======= */
 
-// The productions below are from the XDR standard (RFC-4506). They have been augmented with
+// The productions below are from the XDR standard (RFC-4506), augmented with
 // facilities supporting the definition of types with range constraints.
 
+specification:
+    definition*;
+
+// Definition Syntax
+// -----------------
+definition:
+    type_def | constant_def | encoder_def | decoder_def | line;
+
+type_def:
+      TYPEDEF declaration RANGE range_constraint SEMI
+    | TYPEDEF declaration subtype_spec RANGE range_constraint SEMI
+    | TYPEDEF declaration SEMI
+    | ENUM IDENTIFIER enum_body SEMI
+    | STRUCT IDENTIFIER struct_body SEMI
+    | UNION IDENTIFIER union_body SEMI
+    | MESSAGE STRUCT (LARROW | RARROW) IDENTIFIER struct_body (condition)? SEMI;
+
+range_constraint:
+      CONSTANT DOTDOT CONSTANT
+    | CONSTANT DOTDOT IDENTIFIER;
+
+subtype_spec:
+      IS IDENTIFIER
+    | IS NATURAL;
+
+condition
+    :   (WITH INVARIANT RPOINT expression COMMA)* WITH INVARIANT RPOINT expression;
+
+constant_def:
+      CONST IDENTIFIER EQUALS CONSTANT SEMI
+    | CONST IDENTIFIER IS IDENTIFIER EQUALS CONSTANT SEMI;
+
+encoder_def:
+    ENCODER IDENTIFIER LPARENS declaration (COMMA declaration)* RPARENS SEMI;
+
+decoder_def:
+    DECODER IDENTIFIER LPARENS declaration (COMMA declaration)* RPARENS SEMI;
+
+line:
+     declaration SEMI;
+
+// Declaration Syntax
+// ------------------
 declaration:
       type_specifier IDENTIFIER
     | type_specifier IDENTIFIER EQUALS CONSTANT
@@ -18,13 +61,6 @@ declaration:
     | IDENTIFIER LANGLE value? RANGLE
     | type_specifier STAR IDENTIFIER
     | VOID;
-
-subtype_spec:
-      IS IDENTIFIER
-    | IS NATURAL;
-
-value:
-    CONSTANT | IDENTIFIER;
 
 type_specifier:
       UNSIGNED? INT
@@ -41,6 +77,9 @@ type_specifier:
     | enum_type_spec
     | struct_type_spec
     | union_type_spec;
+
+value:
+    CONSTANT | IDENTIFIER;
 
 enum_type_spec:
     ENUM enum_body;
@@ -67,39 +106,15 @@ union_body:
 case_spec:
     (CASE value COLON)+ declaration SEMI;
 
-constant_def:
-      CONST IDENTIFIER EQUALS CONSTANT SEMI
-    | CONST IDENTIFIER IS IDENTIFIER EQUALS CONSTANT SEMI;
-
-type_def:
-      TYPEDEF declaration RANGE range_constraint SEMI
-    | TYPEDEF declaration subtype_spec RANGE range_constraint SEMI
-    | TYPEDEF declaration SEMI
-    | ENUM IDENTIFIER enum_body SEMI
-    | STRUCT IDENTIFIER struct_body SEMI
-    | UNION IDENTIFIER union_body SEMI
-    | MESSAGE STRUCT (LARROW | RARROW) IDENTIFIER struct_body (condition)? SEMI;
-
-range_constraint:
-      CONSTANT DOTDOT CONSTANT
-    | CONSTANT DOTDOT IDENTIFIER;
-
-line:
-     declaration SEMI;
-
-definition:
-    type_def | constant_def | encoder_def | decoder_def | line;
-
-specification:
-    definition*;
-
-// The declarations below are extensions for CubedOS.
-
-encoder_def:
-    ENCODER IDENTIFIER LPARENS declaration (COMMA declaration)* RPARENS SEMI;
-
-decoder_def:
-    DECODER IDENTIFIER LPARENS declaration (COMMA declaration)* RPARENS SEMI;
+// Expression Syntax
+// -----------------
+expression
+    :   IDENTIFIER LOE IDENTIFIER
+    |   IDENTIFIER GOE IDENTIFIER
+    |   IDENTIFIER RANGLE IDENTIFIER
+    |   IDENTIFIER LANGLE IDENTIFIER
+    |   IDENTIFIER EQUALS IDENTIFIER
+    |   IDENTIFIER NEQUALS IDENTIFIER;
 
 /* =========== */
 /* Lexer rules */
@@ -111,6 +126,7 @@ decoder_def:
 BOOL      : 'bool';
 CASE      : 'case';
 CONST     : 'const';
+DATA      : 'CubedOS.Lib.Octet_Array';
 DECODER   : 'decoder';
 DEFAULT   : 'default';
 DOUBLE    : 'double';
@@ -119,24 +135,23 @@ ENUM      : 'enum';
 FLOAT     : 'float';
 HYPER     : 'hyper';
 INT       : 'int';
+INVARIANT : 'message_invariant';
+IS        : 'is';
+MESSAGE   : 'message';
+NATURAL   : 'Natural';
 OPAQUE    : 'opaque';
 QUADRUPLE : 'quadruple';
 RANGE     : 'range';
 STRING    : 'string';
 STRUCT    : 'struct';
 SWITCH    : 'switch';
+TIME      : 'Ada.Real_Time.Time';
+TIME_SPAN : 'Ada.Real_Time.Time_Span';
 TYPEDEF   : 'typedef';
 UNION     : 'union';
 UNSIGNED  : 'unsigned';
 VOID      : 'void';
-MESSAGE   : 'message';
-IS        : 'is';
-NATURAL   : 'Natural';
-TIME      : 'Ada.Real_Time.Time';
-TIME_SPAN : 'Ada.Real_Time.Time_Span';
-DATA      : 'CubedOS.Lib.Octet_Array';
 WITH      : 'with';
-M_I       : 'message_invariant';
 
 // -------
 // Symbols
@@ -164,17 +179,6 @@ GOE      : '>=';
 
 IDENTIFIER
     :   [a-zA-Z][a-zA-Z0-9_']*;
-
-condition
-    :   (WITH M_I RPOINT expression COMMA)* WITH M_I RPOINT expression;
-
-expression
-    :   IDENTIFIER LOE IDENTIFIER
-    |   IDENTIFIER GOE IDENTIFIER
-    |   IDENTIFIER RANGLE IDENTIFIER
-    |   IDENTIFIER LANGLE IDENTIFIER
-    |   IDENTIFIER EQUALS IDENTIFIER
-    |   IDENTIFIER NEQUALS IDENTIFIER;
 
 WHITESPACE
     :   [ \t\f\r\n]+  -> skip;

@@ -1,19 +1,8 @@
-//-----------------------------------------------------------------------
-// FILE    : MercSpec.scala
-// SUBJECT : Tests for the main Merc application.
-// AUTHOR  : (C) Copyright 2018 by Vermont Technical College
-//
-//-----------------------------------------------------------------------
 package edu.vtc.merc
 
 class MercSpec extends UnitSpec {
 
-  "The placeholder test" should "always work" in {
-    assert(2 + 2 == 4)
-  }
-
-
-  "The command line test" should "always work" in {
+  "Command line processing" should "behave as specified" in {
     val testCases: List[Array[String]] = List(
       Array("file.mxdr"),                    // Basic case, no switches.
       Array("-tfolder", "file.mxdr"),        // The -t switch.
