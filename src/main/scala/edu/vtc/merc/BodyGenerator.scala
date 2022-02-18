@@ -3916,13 +3916,13 @@ class BodyGenerator(
     }
     val structStuff = ctx.declaration().size()
     for (i <- 0 until structStuff) {
-      if (ctx.declaration(i).children.contains(ctx.declaration(i).VOID())) {
+      if (ctx.declaration(i).children.contains(ctx.declaration(i).VOID)) {
         doIndentation()
         out.println("--TODO")
       }
       else {
         val t = ctx.declaration(i).children.get(0).getText
-        val idd = ctx.declaration(i).IDENTIFIER().getText
+        val idd = ctx.declaration(i).IDENTIFIER.getText
         doIndentation()
         if (t == "opaque") {
           out.println(idd + " : CubedOS.Lib.Octet_Array;")
@@ -3952,7 +3952,7 @@ class BodyGenerator(
           out.println(idd + " : String;")
         }
         else {
-          out.println(idd + " : " + ctx.declaration(i).type_specifier().getText + ";")
+          out.println(idd + " : " + ctx.declaration(i).type_specifier.getText + ";")
         }
       }
     }
@@ -4304,11 +4304,11 @@ class BodyGenerator(
     val structStuff = ctx.declaration().size()
     for (i <- 0 until structStuff) {
       doIndentation()
-      val t = symbolTable.getST(id, ctx.declaration(i).IDENTIFIER().getText)
+      val t = symbolTable.getST(id, ctx.declaration(i).IDENTIFIER.getText)
       val tt = ctx.declaration(i).children.get(0).getText
-      val idd = ctx.declaration(i).IDENTIFIER().getText
-      val ts = if (ctx.declaration(i).children.contains(ctx.declaration(i).type_specifier())) {
-        ctx.declaration(i).type_specifier().getText
+      val idd = ctx.declaration(i).IDENTIFIER.getText
+      val ts = if (ctx.declaration(i).children.contains(ctx.declaration(i).type_specifier)) {
+        ctx.declaration(i).type_specifier.getText
       }
       if (symbolTable.getTypeNames.exists(_ == ts)) {
         out.println(idd + " : out " + ts + ";")
@@ -4355,7 +4355,7 @@ class BodyGenerator(
             out.println(idd + " : String;")
           }
           else {
-            out.println(idd + " : out " + ctx.declaration(i).type_specifier().getText + ";")
+            out.println(idd + " : out " + ctx.declaration(i).type_specifier.getText + ";")
           }
         }
       }
@@ -4797,7 +4797,7 @@ class BodyGenerator(
     }
     doIndentation()
     out.println("Position := 0;")
-    val num = ctx.declaration().size()
+    val num = ctx.declaration.size()
     for (i <- symbolTable.getSType(id)) {
       var s = symbolTable.getStructuredTypeParent(id, i)
       if (symbolTable.getST(id, i).contains("StructRep")) {
@@ -5402,7 +5402,7 @@ class BodyGenerator(
         indentationLevel += 1
         doIndentation()
         out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER().getText) {
+        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
           doIndentation()
           out.println("Position := Last + 1;")
         }
@@ -5458,7 +5458,7 @@ class BodyGenerator(
         doIndentation()
         out.println("XDR.Decode(Message.Payload, Position, " + i + "(" + i + "'First .. " + i +
           "'First + (" + i + "_Size - 1)), Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER().getText) {
+        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
           doIndentation()
           out.println("Position := Last + 1;")
         }
@@ -5475,7 +5475,7 @@ class BodyGenerator(
         indentationLevel += 1
         doIndentation()
         out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER().getText) {
+        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
           doIndentation()
           out.println("Position := Last + 1;")
         }
@@ -5493,7 +5493,7 @@ class BodyGenerator(
         indentationLevel += 1
         doIndentation()
         out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER().getText) {
+        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
           doIndentation()
           out.println("Position := Last + 1;")
         }
@@ -5511,7 +5511,7 @@ class BodyGenerator(
         indentationLevel += 1
         doIndentation()
         out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER().getText) {
+        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
           doIndentation()
           out.println("Position := Last + 1;")
         }
@@ -5542,7 +5542,7 @@ class BodyGenerator(
         indentationLevel += 1
         doIndentation()
         out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER().getText) {
+        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
           doIndentation()
           out.println("Position := Last + 1;")
         }
@@ -5572,7 +5572,7 @@ class BodyGenerator(
         indentationLevel += 1
         doIndentation()
         out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER().getText) {
+        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
           doIndentation()
           out.println("Position := Last + 1;")
         }
@@ -5603,7 +5603,7 @@ class BodyGenerator(
         indentationLevel += 1
         doIndentation()
         out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER().getText) {
+        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
           doIndentation()
           out.println("Position := Last + 1;")
         }
@@ -5633,7 +5633,7 @@ class BodyGenerator(
         indentationLevel += 1
         doIndentation()
         out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER().getText) {
+        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
           doIndentation()
           out.println("Position := Last + 1;")
         }
@@ -5663,7 +5663,7 @@ class BodyGenerator(
         indentationLevel += 1
         doIndentation()
         out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER().getText) {
+        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
           doIndentation()
           out.println("Position := Last + 1;")
         }
@@ -5694,7 +5694,7 @@ class BodyGenerator(
         indentationLevel += 1
         doIndentation()
         out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER().getText) {
+        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
           doIndentation()
           out.println("Position := Last + 1;")
         }
@@ -5724,7 +5724,7 @@ class BodyGenerator(
         indentationLevel += 1
         doIndentation()
         out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER().getText) {
+        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
           doIndentation()
           out.println("Position := Last + 1;")
         }
@@ -5755,7 +5755,7 @@ class BodyGenerator(
         indentationLevel += 1
         doIndentation()
         out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER().getText) {
+        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
           doIndentation()
           out.println("Position := Last + 1;")
         }
@@ -5785,7 +5785,7 @@ class BodyGenerator(
         indentationLevel += 1
         doIndentation()
         out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER().getText) {
+        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
           doIndentation()
           out.println("Position := Last + 1;")
         }
@@ -5815,7 +5815,7 @@ class BodyGenerator(
         indentationLevel += 1
         doIndentation()
         out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER().getText) {
+        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
           doIndentation()
           out.println("Position := Last + 1;")
         }
@@ -5845,7 +5845,7 @@ class BodyGenerator(
         indentationLevel += 1
         doIndentation()
         out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER().getText) {
+        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
           doIndentation()
           out.println("Position := Last + 1;")
         }
@@ -5898,7 +5898,7 @@ class BodyGenerator(
         indentationLevel += 1
         doIndentation()
         out.println("XDR.Decode(Message.Payload, Position, " + i + "(" + i + "'First .. " + i + "'First + Size - 1), Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER().getText) {
+        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
           doIndentation()
           out.println("Position := Last + 1;")
         }
@@ -5923,7 +5923,7 @@ class BodyGenerator(
         indentationLevel += 1
         doIndentation()
         out.println("XDR.Decode(Message.Payload, Position, Raw_Interval, Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER().getText) {
+        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
           doIndentation()
           out.println("Position := Last + 1;")
         }
@@ -5953,7 +5953,7 @@ class BodyGenerator(
         indentationLevel += 1
         doIndentation()
         out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER().getText) {
+        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
           doIndentation()
           out.println("Position := Last + 1;")
         }
@@ -6042,32 +6042,32 @@ class BodyGenerator(
     typeOfTypeDef.getText match {
       case "message" =>
         var voidFlag = 0
-        for (i <- 0 until ctx.struct_body().declaration().size()) {
+        for (i <- 0 until ctx.struct_body.declaration.size()) {
           if (ctx.struct_body().declaration(i).getText == "void") {
             voidFlag = 1
           }
         }
-        if (voidFlag == 1 && ctx.struct_body().declaration().size() > 1) {
+        if (voidFlag == 1 && ctx.struct_body.declaration.size() > 1) {
           println("Can't have multiple message struct")
           println("parameters included with void.")
         }
-        else if (voidFlag == 1 && ctx.struct_body().declaration().size() == 1) {
-          val n = ctx.IDENTIFIER().getText
+        else if (voidFlag == 1 && ctx.struct_body.declaration.size() == 1) {
+          val n = ctx.IDENTIFIER.getText
           var arrowFlag = 0
-          if (ctx.children.contains(ctx.LARROW())) {
+          if (ctx.children.contains(ctx.LARROW)) {
             arrowFlag = 1
           }
-          doEncode(ctx.struct_body(), n, arrowFlag)
+          doEncode(ctx.struct_body, n, arrowFlag)
           out.println("")
         }
         else {
           val n = ctx.IDENTIFIER().getText
           var arrowFlag = 0
-          if (ctx.children.contains(ctx.LARROW())) {
+          if (ctx.children.contains(ctx.LARROW)) {
             arrowFlag = 1
           }
-          doEncode(ctx.struct_body(), n, arrowFlag)
-          doDecode(ctx.struct_body(), n, arrowFlag)
+          doEncode(ctx.struct_body, n, arrowFlag)
+          doDecode(ctx.struct_body, n, arrowFlag)
           out.println("")
         }
       case _ =>

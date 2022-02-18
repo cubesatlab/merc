@@ -1,8 +1,7 @@
 package edu.vtc.merc
 
 import java.io.PrintStream
-import org.antlr.v4.runtime._
-
+import org.antlr.v4.runtime.*
 
 /**
  * The main module of the program. It parses the command line, reads the input XDR file, and
@@ -64,7 +63,7 @@ object Main {
     // Create a stream that reads from the specified file.
     val codePointCharStream = CharStreams.fromFileName(sourceName)
 
-    // Parse the input file as XDR.
+    // Parse the input file as MXDR.
     val lexer  = new MercLexer(codePointCharStream)
     val tokens = new CommonTokenStream(lexer)
     val parser = new MercParser(tokens)

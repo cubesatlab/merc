@@ -3,7 +3,7 @@ package edu.vtc.merc
 import java.io.File
 
 import edu.vtc.merc.TypeRep.IntRep
-import edu.vtc.merc.MercParser._
+import edu.vtc.merc.MercParser.*
 
 class SpecificationGenerator(
   templateFolder : String,
@@ -124,27 +124,27 @@ class SpecificationGenerator(
 
   override def visitDeclaration(ctx: DeclarationContext): Void = {
     out.print("type ")
-    val n = if (ctx.children.contains(ctx.IDENTIFIER())) {
-      if (ctx.children.contains(ctx.LBRACKET()) && ctx.children.contains(ctx.RBRACKET())) {
-        if (ctx.type_specifier().children.contains(ctx.type_specifier().struct_type_spec())) {
-          ctx.IDENTIFIER().getText + "_Intermediary"
+    val n = if (ctx.children.contains(ctx.IDENTIFIER)) {
+      if (ctx.children.contains(ctx.LBRACKET) && ctx.children.contains(ctx.RBRACKET)) {
+        if (ctx.type_specifier.children.contains(ctx.type_specifier.struct_type_spec)) {
+          ctx.IDENTIFIER.getText + "_Intermediary"
         }
-        else if (ctx.type_specifier().children.contains(ctx.type_specifier().enum_type_spec())) {
-          ctx.IDENTIFIER().getText + "_Intermediary"
+        else if (ctx.type_specifier.children.contains(ctx.type_specifier.enum_type_spec)) {
+          ctx.IDENTIFIER.getText + "_Intermediary"
         }
         else {
-          ctx.IDENTIFIER().getText
+          ctx.IDENTIFIER.getText
         }
       }
       else {
-        ctx.IDENTIFIER().getText
+        ctx.IDENTIFIER.getText
       }
     }
     else {
-      ctx.VOID().getText
+      ctx.VOID.getText
     }
     out.print(n)
-    if (!ctx.children.contains(ctx.VOID())) {
+    if (!ctx.children.contains(ctx.VOID)) {
       out.print(" is")
       ctx.start.getText match {
         case "opaque" =>
@@ -152,41 +152,41 @@ class SpecificationGenerator(
         case "string" =>
           out.print(" new String")
         case "enum" =>
-          if (ctx.children.contains(ctx.LBRACKET()) && ctx.children.contains(ctx.RBRACKET())) {
-            val id = ctx.IDENTIFIER().getText
+          if (ctx.children.contains(ctx.LBRACKET) && ctx.children.contains(ctx.RBRACKET)) {
+            val id = ctx.IDENTIFIER.getText
             out.println("")
-            visitType_specifier(ctx.type_specifier())
+            visitType_specifier(ctx.type_specifier)
             out.println(";")
             out.println("")
             doIndentation()
-            out.print("type " + id + " is array (0 .. " + ctx.value().CONSTANT().toString + ") of " + id + "_Intermediary")
+            out.print("type " + id + " is array (0 .. " + ctx.value.CONSTANT.toString + ") of " + id + "_Intermediary")
           }
           else {
             out.println("")
-            visitType_specifier(ctx.type_specifier())
+            visitType_specifier(ctx.type_specifier)
           }
         case "struct" =>
-          if (ctx.children.contains(ctx.LBRACKET()) && ctx.children.contains(ctx.RBRACKET())) {
-            val id = ctx.IDENTIFIER().getText
+          if (ctx.children.contains(ctx.LBRACKET) && ctx.children.contains(ctx.RBRACKET)) {
+            val id = ctx.IDENTIFIER.getText
             indentationLevel += 1
             out.println("")
             doIndentation()
             out.println("record")
-            visitStruct_body(ctx.type_specifier().struct_type_spec().struct_body(), id)
+            visitStruct_body(ctx.type_specifier.struct_type_spec.struct_body, id)
             doIndentation()
             out.println("end record;")
             out.println("")
             indentationLevel -= 1
             doIndentation()
-            out.print("type " + id + " is array (0 .. " + ctx.value().CONSTANT().toString + ") of " + id + "_Intermediary")
+            out.print("type " + id + " is array (0 .. " + ctx.value.CONSTANT.toString + ") of " + id + "_Intermediary")
           }
           else {
-            val id = ctx.IDENTIFIER().getText
+            val id = ctx.IDENTIFIER.getText
             indentationLevel += 1
             out.println("")
             doIndentation()
             out.println("record")
-            visitStruct_body(ctx.type_specifier().struct_type_spec().struct_body(), id)
+            visitStruct_body(ctx.type_specifier.struct_type_spec.struct_body, id)
             doIndentation()
             out.print("end record")
             indentationLevel -= 1
@@ -196,14 +196,14 @@ class SpecificationGenerator(
             out.print(" " + n)
           }
           else {
-            if (ctx.children.contains(ctx.LBRACKET()) && ctx.children.contains(ctx.RBRACKET())) {
-              visitType_specifier(ctx.type_specifier())
+            if (ctx.children.contains(ctx.LBRACKET) && ctx.children.contains(ctx.RBRACKET)) {
+              visitType_specifier(ctx.type_specifier)
             }
             else {
-              visitType_specifier2(ctx.type_specifier())
+              visitType_specifier2(ctx.type_specifier)
             }
-            if (ctx.children.contains(ctx.CONSTANT())) {
-              out.print(" := " + ctx.CONSTANT().getText)
+            if (ctx.children.contains(ctx.CONSTANT)) {
+              out.print(" := " + ctx.CONSTANT.getText)
             }
           }
         /*case "union" =>*/
@@ -213,11 +213,11 @@ class SpecificationGenerator(
   }
 
   override def visitValue(ctx: ValueContext): Void = {
-    if (ctx.children.contains(ctx.CONSTANT())) {
-      out.print(ctx.CONSTANT().getText)
+    if (ctx.children.contains(ctx.CONSTANT)) {
+      out.print(ctx.CONSTANT.getText)
     }
-    else if (ctx.children.contains(ctx.IDENTIFIER())) {
-      out.print(ctx.IDENTIFIER().getText)
+    else if (ctx.children.contains(ctx.IDENTIFIER)) {
+      out.print(ctx.IDENTIFIER.getText)
     }
     null
   }
@@ -225,10 +225,10 @@ class SpecificationGenerator(
   def visitType_specifier2(ctx: Type_specifierContext): Void = {
     ctx.getStart.getText match {
       case "int" => out.print(" new Integer")
-      case "unsigned" => if (ctx.children.contains(ctx.INT())) {
+      case "unsigned" => if (ctx.children.contains(ctx.INT)) {
         out.print(" new Lib.Quadruple_Octet")
       }
-      else if (ctx.children.contains(ctx.HYPER())) {
+      else if (ctx.children.contains(ctx.HYPER)) {
         out.print(" new Lib.U_Hyper_Type")
       }
       case "hyper" => out.print(" new Lib.Hyper_Type")
@@ -237,9 +237,9 @@ class SpecificationGenerator(
       case "quadruple" => out.print(" new Quadruple")
       case "bool" => out.print(" new Boolean")
       case "string" => out.print(" new String")
-      case "enum" => visitEnum_type_spec(ctx.enum_type_spec())
-      case "struct" => visitStruct_type_spec(ctx.struct_type_spec())
-      case "union" => visitUnion_type_spec(ctx.union_type_spec())
+      case "enum" => visitEnum_type_spec(ctx.enum_type_spec)
+      case "struct" => visitStruct_type_spec(ctx.struct_type_spec)
+      case "union" => visitUnion_type_spec(ctx.union_type_spec)
       case _ =>
         out.print(" new " + ctx.getText)
     }
@@ -249,10 +249,10 @@ class SpecificationGenerator(
   override def visitType_specifier(ctx: Type_specifierContext): Void = {
     ctx.getStart.getText match {
       case "int" => out.print(" array (0 .. " + symbolTable.getArraySize(ctx.parent.getChild(1).getText) + ") of Integer")
-      case "unsigned" => if (ctx.children.contains(ctx.INT())) {
+      case "unsigned" => if (ctx.children.contains(ctx.INT)) {
         out.print(" array (0 .. " + symbolTable.getArraySize(ctx.parent.getChild(1).getText) + ") of Lib.Quadruple_Octet")
       }
-      else if (ctx.children.contains(ctx.HYPER())) {
+      else if (ctx.children.contains(ctx.HYPER)) {
         out.print(" array (0 .. " + symbolTable.getArraySize(ctx.parent.getChild(1).getText) + ") of Lib.U_Hyper_Type")
       }
       case "hyper" => out.print(" array (0 .. " + symbolTable.getArraySize(ctx.parent.getChild(1).getText) + ") of Lib.Hyper_Type")
@@ -261,17 +261,17 @@ class SpecificationGenerator(
       case "quadruple" => out.print(" array (0 .. " + symbolTable.getArraySize(ctx.parent.getChild(1).getText) + ") of Quadruple")
       case "bool" => out.print(" array (0 .. " + symbolTable.getArraySize(ctx.parent.getChild(1).getText) + ") of Boolean")
       case "string" => out.print(" array (0 .. " + symbolTable.getArraySize(ctx.parent.getChild(1).getText) + ") of String")
-      case "enum" => visitEnum_type_spec(ctx.enum_type_spec())
+      case "enum" => visitEnum_type_spec(ctx.enum_type_spec)
       case "struct" =>
-        visitStruct_type_spec(ctx.struct_type_spec())
+        visitStruct_type_spec(ctx.struct_type_spec)
         out.print(" array (0 .. " + symbolTable.getArraySize(ctx.parent.getChild(1).getText) + ") of " + ctx.parent.getChild(1).getText + "_Intermediary")
-      case "union" => visitUnion_type_spec(ctx.union_type_spec())
+      case "union" => visitUnion_type_spec(ctx.union_type_spec)
       case _ =>
         if (symbolTable.getTypeRepresentation(ctx.parent.getChild(1).getText).toString.contains("ArrayRep")) {
           if (symbolTable.getArrayType(ctx.parent.getChild(1).getText) == IntRep || ctx.children.contains(ctx.INT())) {
             out.print(" array (0 .. " + symbolTable.getArraySize(ctx.parent.getChild(1).getText) + ") of Integer")
           }
-          else if (ctx.children.contains(ctx.IDENTIFIER())) {
+          else if (ctx.children.contains(ctx.IDENTIFIER)) {
             out.print(" array (0 .. " + symbolTable.getArraySize(ctx.parent.getChild(1).getText) + ") of " + ctx.IDENTIFIER())
           }
         }
@@ -280,26 +280,26 @@ class SpecificationGenerator(
   }
 
   override def visitEnum_type_spec(ctx: Enum_type_specContext): Void = {
-    visitEnum_body(ctx.enum_body())
+    visitEnum_body(ctx.enum_body)
     null
   }
 
   override def visitEnum_body(ctx: MercParser.Enum_bodyContext): Void = {
-    val enumeratorList = ctx.IDENTIFIER()
+    val enumeratorList = ctx.IDENTIFIER
     indentationLevel += 1
     doIndentation()
     out.print("(")
     if (!ctx.getChild(2).getText.equals(",")) {
-      val v = ctx.IDENTIFIER().size
+      val v = ctx.IDENTIFIER.size
       for (i <- 0 until v) {
         val enumerator = ctx.IDENTIFIER(i).getText
         var vr = ""
-        if (ctx.children.contains(ctx.value())) {
-          if (ctx.value(i).children.contains(ctx.value(i).CONSTANT())) {
-            vr = ctx.value(i).CONSTANT().getText
+        if (ctx.children.contains(ctx.value)) {
+          if (ctx.value(i).children.contains(ctx.value(i).CONSTANT)) {
+            vr = ctx.value(i).CONSTANT.getText
           }
           else {
-            vr = ctx.value(i).IDENTIFIER().getText
+            vr = ctx.value(i).IDENTIFIER.getText
           }
           out.print(enumerator + " = " + vr)
         }
@@ -329,7 +329,7 @@ class SpecificationGenerator(
   }
 
   override def visitStruct_type_spec(ctx: Struct_type_specContext): Void = {
-    visitStruct_body(ctx.struct_body())
+    visitStruct_body(ctx.struct_body)
     null
   }
 
@@ -341,11 +341,11 @@ class SpecificationGenerator(
     indentationLevel += 1
     doIndentation()
     out.println("(Message : in  Message_Record;")
-    val structStuff = ctx.declaration().size()
+    val structStuff = ctx.declaration.size()
     for (i <- 0 until structStuff) {
       doIndentation()
       val t = ctx.declaration(i).children.get(0).getText
-      val id = ctx.declaration(i).IDENTIFIER().getText
+      val id = ctx.declaration(i).IDENTIFIER.getText
       if (t == "opaque") {
         out.println(id + " : out CubedOS.Lib.Octet_Array;")
         doIndentation()
@@ -357,7 +357,7 @@ class SpecificationGenerator(
         out.println(id + "_Size : out " + "Natural;")
       }
       else if (t == "CubedOS.Lib.Octet_Array") {
-        out.println(id + " : out " + ctx.declaration(i).type_specifier().getText + ";")
+        out.println(id + " : out " + ctx.declaration(i).type_specifier.getText + ";")
         doIndentation()
         out.println("Size : out CubedOS.Lib.Octet_Array_Count;")
       }
@@ -383,7 +383,7 @@ class SpecificationGenerator(
         out.println(id + " : out Boolean;")
       }
       else {
-        out.println(id + " : out " + ctx.declaration(i).type_specifier().getText + ";")
+        out.println(id + " : out " + ctx.declaration(i).type_specifier.getText + ";")
       }
     }
     doIndentation()
@@ -399,23 +399,23 @@ class SpecificationGenerator(
     doIndentation()
     out.print("Depends => ((")
     for (i <- 0 until structStuff) {
-      val t = if (ctx.declaration(i).children.contains(ctx.declaration(i).type_specifier())) {
-        ctx.declaration(i).type_specifier().getText
+      val t = if (ctx.declaration(i).children.contains(ctx.declaration(i).type_specifier)) {
+        ctx.declaration(i).type_specifier.getText
       }
-      else if (ctx.declaration(i).children.contains(ctx.declaration(i).OPAQUE())) {
+      else if (ctx.declaration(i).children.contains(ctx.declaration(i).OPAQUE)) {
         "CubedOS.Lib.Octet_Array"
       }
-      else if (ctx.declaration(i).children.contains(ctx.declaration(i).STRING())) {
+      else if (ctx.declaration(i).children.contains(ctx.declaration(i).STRING)) {
         "string"
       }
       else {
         ""
       }
-      val id = ctx.declaration(i).IDENTIFIER().getText
+      val id = ctx.declaration(i).IDENTIFIER.getText
       if (i == structStuff - 1) {
         if (m_i.isEmpty) {
           if (t == "string" ||
-            ctx.declaration(i).children.contains(ctx.declaration(i).STRING())) {
+            ctx.declaration(i).children.contains(ctx.declaration(i).STRING)) {
             out.print(id + ", ")
             out.print(id + "_Size, Decode_Status) => Message);")
           }
@@ -429,7 +429,7 @@ class SpecificationGenerator(
         }
         else {
           if (t == "string" ||
-            ctx.declaration(i).children.contains(ctx.declaration(i).STRING())) {
+            ctx.declaration(i).children.contains(ctx.declaration(i).STRING)) {
             out.print(id + ", ")
             out.print(id + "_Size, Decode_Status) => Message),")
           }
@@ -444,7 +444,7 @@ class SpecificationGenerator(
       }
       else {
         if (t == "string" ||
-          ctx.declaration(i).children.contains(ctx.declaration(i).STRING())) {
+          ctx.declaration(i).children.contains(ctx.declaration(i).STRING)) {
           out.print(id + ", ")
           out.print(id + "_Size, ")
         }
@@ -499,20 +499,20 @@ class SpecificationGenerator(
     }
     val structStuff = ctx.declaration().size()
     for (i <- 0 until structStuff) {
-      if (ctx.declaration(i).children.contains(ctx.declaration(i).VOID())) {
+      if (ctx.declaration(i).children.contains(ctx.declaration(i).VOID)) {
         doIndentation()
         out.println("--TODO")
       }
       else {
         doIndentation()
         val t = ctx.declaration(i).children.get(0).getText
-        val id = ctx.declaration(i).IDENTIFIER().getText
+        val id = ctx.declaration(i).IDENTIFIER.getText
         if (t == "string") {
           out.println(id + " : String;")
           stringFlag = id
         }
         else if (t == "CubedOS.Lib.Octet_Array") {
-          out.println(id + " : " + ctx.declaration(i).type_specifier().getText + ";")
+          out.println(id + " : " + ctx.declaration(i).type_specifier.getText + ";")
           dataFlag = id
         }
         else if (t == "opaque") {
@@ -541,7 +541,7 @@ class SpecificationGenerator(
           out.println(id + " : Boolean;")
         }
         else {
-          out.println(id + " : " + ctx.declaration(i).type_specifier().getText + ";")
+          out.println(id + " : " + ctx.declaration(i).type_specifier.getText + ";")
         }
       }
     }
@@ -608,163 +608,163 @@ class SpecificationGenerator(
 
   def visitStruct_body(ctx: Struct_bodyContext, id: String): Void = {
     indentationLevel += 1
-    for (i <- 0 until ctx.declaration().size()) {
+    for (i <- 0 until ctx.declaration.size()) {
       doIndentation()
-      out.print(ctx.declaration(i).IDENTIFIER().getText)
+      out.print(ctx.declaration(i).IDENTIFIER.getText)
       out.print(" : ")
-      symbolTable.getST(id, ctx.declaration(i).IDENTIFIER().getText) match {
-        case "UIntRep" => if (ctx.declaration(i).type_specifier().children.contains(ctx.declaration(i).type_specifier().INT())) {
+      symbolTable.getST(id, ctx.declaration(i).IDENTIFIER.getText) match {
+        case "UIntRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.INT)) {
           out.print("Lib.Quadruple_Octet")
         }
         else {
-          out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER().getText))
+          out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
         }
-        case "IntRep" => if (ctx.declaration(i).type_specifier().children.contains(ctx.declaration(i).type_specifier().INT())) {
+        case "IntRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.INT)) {
           out.print("Integer")
         }
         else {
-          out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER().getText))
+          out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
         }
-        case "FloatRep" => if (ctx.declaration(i).type_specifier().children.contains(ctx.declaration(i).type_specifier().FLOAT())) {
+        case "FloatRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.FLOAT)) {
           out.print("Float")
         }
         else {
-          out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER().getText))
+          out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
         }
-        case "DoubleRep" => if (ctx.declaration(i).type_specifier().children.contains(ctx.declaration(i).type_specifier().DOUBLE())) {
+        case "DoubleRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.DOUBLE)) {
           out.print("Double")
         }
         else {
-          out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER().getText))
+          out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
         }
-        case "UHyperRep" => if (ctx.declaration(i).type_specifier().children.contains(ctx.declaration(i).type_specifier().HYPER())) {
+        case "UHyperRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.HYPER)) {
           out.print("Lib.U_Hyper_Type")
         }
         else {
-          out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER().getText))
+          out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
         }
-        case "HyperRep" => if (ctx.declaration(i).type_specifier().children.contains(ctx.declaration(i).type_specifier().HYPER())) {
+        case "HyperRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.HYPER)) {
           out.print("Lib.Hyper_Type")
         }
         else {
-          out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER().getText))
+          out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
         }
-        case "BoolRep" => if (ctx.declaration(i).type_specifier().children.contains(ctx.declaration(i).type_specifier().BOOL())) {
+        case "BoolRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.BOOL)) {
           out.print("Boolean")
         }
         else {
-          out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER().getText))
+          out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
         }
-        case "StringRep" => if (ctx.declaration(i).type_specifier().children.contains(ctx.declaration(i).type_specifier().STRING())) {
+        case "StringRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.STRING)) {
           out.print("String")
         }
         else {
-          out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER().getText))
+          out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
         }
-        case "TimeSpanRep" => if (ctx.declaration(i).type_specifier().children.contains(ctx.declaration(i).type_specifier().TIME_SPAN())) {
+        case "TimeSpanRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.TIME_SPAN)) {
           out.print("Ada.Real_Time.Time_Span")
         }
         else {
-          out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER().getText))
+          out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
         }
-        case "TimeRep" => if (ctx.declaration(i).type_specifier().children.contains(ctx.declaration(i).type_specifier().TIME())) {
+        case "TimeRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.TIME)) {
           out.print("Ada.Real_Time.Time")
         }
         else {
-          out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER().getText))
+          out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
         }
-        case "DataRep" => if (ctx.declaration(i).type_specifier().children.contains(ctx.declaration(i).type_specifier().DATA())) {
+        case "DataRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.DATA)) {
           out.print("CubedOS.Lib.Octet_Array")
         }
         else {
-          out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER().getText))
+          out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
         }
         case "EnumRep" =>
-          val y = ctx.declaration(i).IDENTIFIER().getText
+          val y = ctx.declaration(i).IDENTIFIER.getText
           out.print(symbolTable.getStructuredTypeParent(id, y))
         case "StructRep" =>
-          val y = ctx.declaration(i).IDENTIFIER().getText
+          val y = ctx.declaration(i).IDENTIFIER.getText
           out.print(symbolTable.getStructuredTypeParent(id, y))
         case "ArrayRep" =>
-          val y = ctx.declaration(i).IDENTIFIER().getText
+          val y = ctx.declaration(i).IDENTIFIER.getText
           symbolTable.getArraySType(id, y) match {
-            case "UIntRep" => if (ctx.declaration(i).type_specifier().children.contains(ctx.declaration(i).type_specifier().INT())) {
+            case "UIntRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.INT)) {
               out.print("Lib.Quadruple_Octet")
             }
             else {
-              out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER().getText))
+              out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
             }
-            case "IntRep" => if (ctx.declaration(i).type_specifier().children.contains(ctx.declaration(i).type_specifier().INT())) {
+            case "IntRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.INT)) {
               out.print("Integer")
             }
             else {
-              out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER().getText))
+              out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
             }
-            case "FloatRep" => if (ctx.declaration(i).type_specifier().children.contains(ctx.declaration(i).type_specifier().FLOAT())) {
+            case "FloatRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.FLOAT)) {
               out.print("Float")
             }
             else {
-              out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER().getText))
+              out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
             }
-            case "DoubleRep" => if (ctx.declaration(i).type_specifier().children.contains(ctx.declaration(i).type_specifier().DOUBLE())) {
+            case "DoubleRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.DOUBLE)) {
               out.print("Double")
             }
             else {
-              out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER().getText))
+              out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
             }
-            case "UHyperRep" => if (ctx.declaration(i).type_specifier().children.contains(ctx.declaration(i).type_specifier().HYPER())) {
+            case "UHyperRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.HYPER)) {
               out.print("Lib.U_Hyper_Type")
             }
             else {
-              out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER().getText))
+              out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
             }
-            case "HyperRep" => if (ctx.declaration(i).type_specifier().children.contains(ctx.declaration(i).type_specifier().HYPER())) {
+            case "HyperRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.HYPER)) {
               out.print("Lib.Hyper_Type")
             }
             else {
-              out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER().getText))
+              out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
             }
-            case "BoolRep" => if (ctx.declaration(i).type_specifier().children.contains(ctx.declaration(i).type_specifier().BOOL())) {
+            case "BoolRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.BOOL)) {
               out.print("Boolean")
             }
             else {
-              out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER().getText))
+              out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
             }
-            case "StringRep" => if (ctx.declaration(i).type_specifier().children.contains(ctx.declaration(i).type_specifier().STRING())) {
+            case "StringRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.STRING)) {
               out.print("String")
             }
             else {
-              out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER().getText))
+              out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
             }
-            case "TimeSpanRep" => if (ctx.declaration(i).type_specifier().children.contains(ctx.declaration(i).type_specifier().TIME_SPAN())) {
+            case "TimeSpanRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.TIME_SPAN)) {
               out.print("Ada.Real_Time.Time_Span")
             }
             else {
-              out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER().getText))
+              out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
             }
-            case "TimeRep" => if (ctx.declaration(i).type_specifier().children.contains(ctx.declaration(i).type_specifier().TIME())) {
+            case "TimeRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.TIME)) {
               out.print("Ada.Real_Time.Time")
             }
             else {
-              out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER().getText))
+              out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
             }
-            case "DataRep" => if (ctx.declaration(i).type_specifier().children.contains(ctx.declaration(i).type_specifier().DATA())) {
+            case "DataRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.DATA)) {
               out.print("CubedOS.Lib.Octet_Array")
             }
             else {
-              out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER().getText))
+              out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
             }
             case "EnumRep" =>
-              val y = ctx.declaration(i).IDENTIFIER().getText
+              val y = ctx.declaration(i).IDENTIFIER.getText
               out.print(symbolTable.getStructuredTypeParent(id, y))
             case "StructRep" =>
-              val y = ctx.declaration(i).IDENTIFIER().getText
+              val y = ctx.declaration(i).IDENTIFIER.getText
               out.print(symbolTable.getStructuredTypeParent(id, y))
             case _ =>
-              out.print(ctx.declaration(i).type_specifier().getText)
+              out.print(ctx.declaration(i).type_specifier.getText)
           }
         case _ =>
-          out.print(ctx.declaration(i).type_specifier().getText)
+          out.print(ctx.declaration(i).type_specifier.getText)
       }
       out.println(";")
     }
@@ -774,7 +774,7 @@ class SpecificationGenerator(
 
   override def visitConstant_def(ctx: Constant_defContext): Void = {
     doIndentation()
-    val value = ctx.CONSTANT().getText
+    val value = ctx.CONSTANT.getText
     if (ctx.getChildCount == 5) {
       val id = ctx.IDENTIFIER(0).getText
       out.println(id + ": constant := " + value + ";" + "\n")
@@ -791,10 +791,10 @@ class SpecificationGenerator(
     typeOfTypeDef match {
       case "typedef" =>
         doIndentation()
-        if (!ctx.children.contains(ctx.subtype_spec())) {
-          visitDeclaration(ctx.declaration())
-          if (ctx.children.contains(ctx.RANGE())) {
-            val t = ctx.declaration().IDENTIFIER().getText
+        if (!ctx.children.contains(ctx.subtype_spec)) {
+          visitDeclaration(ctx.declaration)
+          if (ctx.children.contains(ctx.RANGE)) {
+            val t = ctx.declaration().IDENTIFIER.getText
             if (symbolTable.getTypeRepresentation(t).equals(TypeRep.FloatRep)) {
               visitRange_constraint(ctx.range_constraint, 1)
             }
@@ -804,11 +804,11 @@ class SpecificationGenerator(
           }
         }
         else {
-          out.print("subtype " + ctx.declaration().IDENTIFIER().getText + " is ")
-          if (ctx.range_constraint().children.contains(ctx.range_constraint().IDENTIFIER())) {
-            if (ctx.range_constraint().IDENTIFIER().getText.contains('\'')) {
-              out.print(ctx.range_constraint().IDENTIFIER().
-                getText.substring(0, ctx.range_constraint().IDENTIFIER().
+          out.print("subtype " + ctx.declaration.IDENTIFIER.getText + " is ")
+          if (ctx.range_constraint.children.contains(ctx.range_constraint.IDENTIFIER)) {
+            if (ctx.range_constraint.IDENTIFIER.getText.contains('\'')) {
+              out.print(ctx.range_constraint.IDENTIFIER.
+                getText.substring(0, ctx.range_constraint.IDENTIFIER.
                 getText.indexOf('\'')))
             }
             else {
@@ -816,9 +816,9 @@ class SpecificationGenerator(
             }
           }
           else {
-            out.print(ctx.subtype_spec().IDENTIFIER())
+            out.print(ctx.subtype_spec.IDENTIFIER)
           }
-          val t = ctx.declaration().IDENTIFIER().getText
+          val t = ctx.declaration.IDENTIFIER.getText
           if (symbolTable.getTypeRepresentation(t).equals(TypeRep.FloatRep)) {
             visitRange_constraint(ctx.range_constraint, 1)
           }
@@ -832,22 +832,22 @@ class SpecificationGenerator(
       case "enum"
       =>
         doIndentation()
-        out.println("type " + ctx.IDENTIFIER().getText + " is ")
+        out.println("type " + ctx.IDENTIFIER.getText + " is ")
         indentationLevel += 1
-        visitEnum_body(ctx.enum_body())
+        visitEnum_body(ctx.enum_body)
         indentationLevel -= 1
         out.println(";")
         out.println("")
 
       case "struct"
       =>
-        val id = ctx.IDENTIFIER().getText
+        val id = ctx.IDENTIFIER.getText
         doIndentation()
         out.println("type " + id + " is ")
         indentationLevel += 1
         doIndentation()
         out.println("record")
-        visitStruct_body(ctx.struct_body(), id)
+        visitStruct_body(ctx.struct_body, id)
         doIndentation()
         out.println("end record;")
         indentationLevel -= 1
@@ -863,50 +863,50 @@ class SpecificationGenerator(
 
       case "message"
       =>
-        val n = ctx.IDENTIFIER().getText
+        val n = ctx.IDENTIFIER.getText
         var m_i = List[String]()
-        if (ctx.children.contains(ctx.condition())) {
-          for (i <- 0 until ctx.condition().expression().size()) {
-            if (ctx.condition().expression(i).children.contains(ctx.condition().expression(i).GOE())) {
-              m_i = (ctx.condition().expression(i).IDENTIFIER(0).getText + " " +
-                ctx.condition().expression(i).GOE().getText + " " +
-                ctx.condition().expression(i).IDENTIFIER(1).getText) :: m_i
+        if (ctx.children.contains(ctx.condition)) {
+          for (i <- 0 until ctx.condition.expression.size()) {
+            if (ctx.condition.expression(i).children.contains(ctx.condition.expression(i).GOE)) {
+              m_i = (ctx.condition.expression(i).IDENTIFIER(0).getText + " " +
+                ctx.condition.expression(i).GOE.getText + " " +
+                ctx.condition.expression(i).IDENTIFIER(1).getText) :: m_i
             }
-            else if (ctx.condition().expression(i).children.contains(ctx.condition().expression(i).LOE())) {
-              m_i = (ctx.condition().expression(i).IDENTIFIER(0).getText + " " +
-                ctx.condition().expression(i).LOE().getText + " " +
-                ctx.condition().expression(i).IDENTIFIER(1).getText) :: m_i
+            else if (ctx.condition.expression(i).children.contains(ctx.condition.expression(i).LOE)) {
+              m_i = (ctx.condition.expression(i).IDENTIFIER(0).getText + " " +
+                ctx.condition.expression(i).LOE.getText + " " +
+                ctx.condition.expression(i).IDENTIFIER(1).getText) :: m_i
             }
-            else if (ctx.condition().expression(i).children.contains(ctx.condition().expression(i).RANGLE())) {
-              m_i = (ctx.condition().expression(i).IDENTIFIER(0).getText + " " +
-                ctx.condition().expression(i).RANGLE().getText + " " +
-                ctx.condition().expression(i).IDENTIFIER(1).getText) :: m_i
+            else if (ctx.condition.expression(i).children.contains(ctx.condition.expression(i).RANGLE)) {
+              m_i = (ctx.condition.expression(i).IDENTIFIER(0).getText + " " +
+                ctx.condition.expression(i).RANGLE.getText + " " +
+                ctx.condition.expression(i).IDENTIFIER(1).getText) :: m_i
             }
-            else if (ctx.condition().expression(i).children.contains(ctx.condition().expression(i).LANGLE())) {
-              m_i = (ctx.condition().expression(i).IDENTIFIER(0).getText + " " +
-                ctx.condition().expression(i).LANGLE().getText + " " +
-                ctx.condition().expression(i).IDENTIFIER(1).getText) :: m_i
+            else if (ctx.condition.expression(i).children.contains(ctx.condition.expression(i).LANGLE)) {
+              m_i = (ctx.condition.expression(i).IDENTIFIER(0).getText + " " +
+                ctx.condition.expression(i).LANGLE.getText + " " +
+                ctx.condition.expression(i).IDENTIFIER(1).getText) :: m_i
             }
-            else if (ctx.condition().expression(i).children.contains(ctx.condition().expression(i).EQUALS())) {
-              m_i = (ctx.condition().expression(i).IDENTIFIER(0).getText + " " +
-                ctx.condition().expression(i).EQUALS().getText + " " +
-                ctx.condition().expression(i).IDENTIFIER(1).getText) :: m_i
+            else if (ctx.condition.expression(i).children.contains(ctx.condition.expression(i).EQUALS)) {
+              m_i = (ctx.condition.expression(i).IDENTIFIER(0).getText + " " +
+                ctx.condition.expression(i).EQUALS.getText + " " +
+                ctx.condition.expression(i).IDENTIFIER(1).getText) :: m_i
             }
           }
         }
         var voidFlag = 0
-        for (i <- 0 until ctx.struct_body().declaration().size()) {
-          if (ctx.struct_body().declaration(i).getText == "void") {
+        for (i <- 0 until ctx.struct_body.declaration.size()) {
+          if (ctx.struct_body.declaration(i).getText == "void") {
             voidFlag = 1
           }
         }
-        if (voidFlag == 1 && ctx.struct_body().declaration().size() > 1) {
+        if (voidFlag == 1 && ctx.struct_body.declaration.size() > 1) {
           println("Can't have multiple message struct")
           println("parameters included with void.")
         }
-        else if (voidFlag == 1 && ctx.struct_body().declaration().size() == 1) {
+        else if (voidFlag == 1 && ctx.struct_body.declaration.size() == 1) {
           var arrowFlag = 0
-          if (ctx.children.contains(ctx.LARROW())) {
+          if (ctx.children.contains(ctx.LARROW)) {
             arrowFlag = 1
           }
           doEncode(ctx.struct_body(), n, m_i, arrowFlag)
@@ -915,12 +915,12 @@ class SpecificationGenerator(
         }
         else {
           var arrowFlag = 0
-          if (ctx.children.contains(ctx.LARROW())) {
+          if (ctx.children.contains(ctx.LARROW)) {
             arrowFlag = 1
           }
-          doEncode(ctx.struct_body(), n, m_i, arrowFlag)
+          doEncode(ctx.struct_body, n, m_i, arrowFlag)
           doCheck(n, arrowFlag)
-          doDecode(ctx.struct_body(), n, m_i, arrowFlag)
+          doDecode(ctx.struct_body, n, m_i, arrowFlag)
           out.println("")
         }
       case _ =>
@@ -933,13 +933,13 @@ class SpecificationGenerator(
   = {
     var lowerBound = ctx.getChild(0).getText
     var upperBound = ctx.getChild(2).getText
-    if (ctx.children.contains(ctx.IDENTIFIER())) {
-      if (ctx.IDENTIFIER().getText.contains("'")) {
-        val n = ctx.IDENTIFIER().getText.indexOf("'")
-        if (symbolTable.getTypeNames.exists(_ == ctx.IDENTIFIER().getText.substring(0, n))) {
-          val t = symbolTable.getTypeRepresentation(ctx.IDENTIFIER().getText.substring(0, n))
+    if (ctx.children.contains(ctx.IDENTIFIER)) {
+      if (ctx.IDENTIFIER.getText.contains("'")) {
+        val n = ctx.IDENTIFIER.getText.indexOf("'")
+        if (symbolTable.getTypeNames.exists(_ == ctx.IDENTIFIER.getText.substring(0, n))) {
+          val t = symbolTable.getTypeRepresentation(ctx.IDENTIFIER.getText.substring(0, n))
           if (t.equals(TypeRep.UIntRep)) {
-            var f = ctx.IDENTIFIER().getText
+            var f = ctx.IDENTIFIER.getText
             while (f.contains("'")) {
               val num = f.indexOf("'")
               if (symbolTable.getTypeNames.exists(_ == f.substring(0, num))) {
@@ -950,7 +950,7 @@ class SpecificationGenerator(
             out.print(" range " + lowerBound + " .. " + f)
           }
           else if (t.equals(TypeRep.IntRep)) {
-            var f = ctx.IDENTIFIER().getText
+            var f = ctx.IDENTIFIER.getText
             while (f.contains("'")) {
               val num = f.indexOf("'")
               if (symbolTable.getTypeNames.exists(_ == f.substring(0, num))) {
@@ -961,12 +961,12 @@ class SpecificationGenerator(
             out.print(" range " + lowerBound + " .. " + f)
           }
           else if (t.toString.contains("ConstRep")) {
-            var f = symbolTable.getTypeValue(ctx.IDENTIFIER().getText)
+            var f = symbolTable.getTypeValue(ctx.IDENTIFIER.getText)
             f = f.substring(f.lastIndexOf(" ") + 1, f.length)
             out.print(" range " + lowerBound + " .. " + f)
           }
           else if (t.equals(TypeRep.FloatRep)) {
-            var f = ctx.IDENTIFIER().getText
+            var f = ctx.IDENTIFIER.getText
             while (f.contains("'")) {
               val num = f.indexOf("'")
               if (symbolTable.getTypeNames.exists(_ == f.substring(0, num))) {
@@ -984,8 +984,8 @@ class SpecificationGenerator(
           }
           else {
             reporter.reportError(
-              ctx.IDENTIFIER().getSymbol.getLine,
-              ctx.IDENTIFIER().getSymbol.getCharPositionInLine + 1,
+              ctx.IDENTIFIER.getSymbol.getLine,
+              ctx.IDENTIFIER.getSymbol.getCharPositionInLine + 1,
               upperBound.substring(0, n) + " hasn't been declared yet.")
           }
         }
@@ -994,25 +994,25 @@ class SpecificationGenerator(
         if (upperBound.toLowerCase == "natural") {
           out.print(" range " + lowerBound + " .. 4294967295")
         }
-        else if (symbolTable.getTypeNames.exists(_ == ctx.IDENTIFIER().getText)) {
-          val t = symbolTable.getTypeRepresentation(ctx.IDENTIFIER().getText)
+        else if (symbolTable.getTypeNames.exists(_ == ctx.IDENTIFIER.getText)) {
+          val t = symbolTable.getTypeRepresentation(ctx.IDENTIFIER.getText)
           if (t.equals(TypeRep.UIntRep)) {
-            var f = symbolTable.getTypeValue(ctx.IDENTIFIER().getText)
+            var f = symbolTable.getTypeValue(ctx.IDENTIFIER.getText)
             f = f.substring(f.lastIndexOf(" ") + 1, f.length)
             out.print(" range " + lowerBound + " .. " + f)
           }
           else if (t.equals(TypeRep.IntRep)) {
-            var f = symbolTable.getTypeValue(ctx.IDENTIFIER().getText)
+            var f = symbolTable.getTypeValue(ctx.IDENTIFIER.getText)
             f = f.substring(f.lastIndexOf(" ") + 1, f.length)
             out.print(" range " + lowerBound + " .. " + f)
           }
           else if (t.toString.contains("ConstRep")) {
-            var f = symbolTable.getTypeValue(ctx.IDENTIFIER().getText)
+            var f = symbolTable.getTypeValue(ctx.IDENTIFIER.getText)
             f = f.substring(f.lastIndexOf(" ") + 1, f.length)
             out.print(" range " + lowerBound + " .. " + f)
           }
           else if (t.equals(TypeRep.FloatRep)) {
-            var f = symbolTable.getTypeValue(ctx.IDENTIFIER().getText)
+            var f = symbolTable.getTypeValue(ctx.IDENTIFIER.getText)
             f = f.substring(f.lastIndexOf(" ") + 1, f.length)
             if (!lowerBound.contains(".")){
               lowerBound = lowerBound + ".0"
@@ -1024,8 +1024,8 @@ class SpecificationGenerator(
           }
           else {
             reporter.reportError(
-              ctx.IDENTIFIER().getSymbol.getLine,
-              ctx.IDENTIFIER().getSymbol.getCharPositionInLine + 1,
+              ctx.IDENTIFIER.getSymbol.getLine,
+              ctx.IDENTIFIER.getSymbol.getCharPositionInLine + 1,
               upperBound + " hasn't been declared yet.")
           }
         }

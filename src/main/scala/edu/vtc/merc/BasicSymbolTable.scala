@@ -1,6 +1,6 @@
 package edu.vtc.merc
 
-import edu.vtc.merc.SymbolTable._
+import edu.vtc.merc.SymbolTable.*
 import edu.vtc.merc.TypeRep.ComponentRep
 
 /**
