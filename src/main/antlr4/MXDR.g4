@@ -1,4 +1,4 @@
-grammar Merc;
+grammar MXDR;
 
 /* ======= */
 /* Grammar */

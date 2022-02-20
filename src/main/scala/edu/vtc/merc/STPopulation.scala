@@ -5,7 +5,7 @@ import edu.vtc.merc.TypeRep.ComponentRep
 class STPopulation(
   nameOfFile : String,
   symbolTable: BasicSymbolTable,
-  reporter   : Reporter) extends MercBaseVisitor[(String, TypeRep.Rep, String)] {
+  reporter   : Reporter) extends MXDRBaseVisitor[(String, TypeRep.Rep, String)] {
 
   private val reservedWords = List(
     "abort",     "abs",          "abstract", "accept",  "access",    "aliased",
@@ -34,7 +34,7 @@ class STPopulation(
   }
 
 
-  def visitRC(ctx: MercParser.Range_constraintContext): String = {
+  def visitRC(ctx: MXDRParser.Range_constraintContext): String = {
     val lowerBoundNode = ctx.CONSTANT(0)
     if (ctx.CONSTANT().size() > 1) {
       val upperBoundNode = ctx.CONSTANT(1)
@@ -163,7 +163,7 @@ class STPopulation(
   }
 
 
-  def structP(ctx: MercParser.Struct_bodyContext): ComponentRep = {
+  def structP(ctx: MXDRParser.Struct_bodyContext): ComponentRep = {
     var p2 = List[(String, TypeRep.Rep, String)]()
     val i = ctx.declaration().size()
     for (x <- 0 until i) {
@@ -413,7 +413,7 @@ class STPopulation(
   }
 
 
-  def enumP(ctx: MercParser.Enum_bodyContext): ComponentRep = {
+  def enumP(ctx: MXDRParser.Enum_bodyContext): ComponentRep = {
     var p2 = List[(String, TypeRep.Rep, String)]()
     val i = ctx.IDENTIFIER().size
     if (ctx.children.contains(ctx.EQUALS())) {
@@ -469,12 +469,12 @@ class STPopulation(
   }
 
 
-  override def visitSpecification(ctx: MercParser.SpecificationContext): (String, TypeRep.Rep, String) = {
+  override def visitSpecification(ctx: MXDRParser.SpecificationContext): (String, TypeRep.Rep, String) = {
     visitChildren(ctx)
   }
 
 
-  override def visitDefinition(ctx: MercParser.DefinitionContext): (String, TypeRep.Rep, String) = {
+  override def visitDefinition(ctx: MXDRParser.DefinitionContext): (String, TypeRep.Rep, String) = {
     if (ctx.children.contains(ctx.type_def())) {
       ctx.getChild(0).getChild(0).getText match {
         case "typedef" =>
@@ -568,12 +568,12 @@ class STPopulation(
   }
 
 
-  override def visitDeclaration(ctx: MercParser.DeclarationContext): (String, TypeRep.Rep, String) = {
+  override def visitDeclaration(ctx: MXDRParser.DeclarationContext): (String, TypeRep.Rep, String) = {
     visitChildren(ctx)
   }
 
 
-  override def visitType_def(ctx: MercParser.Type_defContext): (String, TypeRep.Rep, String) = {
+  override def visitType_def(ctx: MXDRParser.Type_defContext): (String, TypeRep.Rep, String) = {
     ctx.getChild(0).getText match {
       case "typedef" =>
         val name = ctx.declaration().IDENTIFIER()
@@ -929,7 +929,7 @@ class STPopulation(
   }
 
 
-  override def visitLine(ctx: MercParser.LineContext): (String, TypeRep.Rep, String) = {
+  override def visitLine(ctx: MXDRParser.LineContext): (String, TypeRep.Rep, String) = {
     var n = if (ctx.declaration().children.contains(ctx.declaration().IDENTIFIER())) {
       ctx.declaration().IDENTIFIER().getText
     }
@@ -1110,7 +1110,7 @@ class STPopulation(
   }
 
 
-  override def visitConstant_def(ctx: MercParser.Constant_defContext): (String, TypeRep.Rep, String) = {
+  override def visitConstant_def(ctx: MXDRParser.Constant_defContext): (String, TypeRep.Rep, String) = {
     val name = ctx.IDENTIFIER(0)
     val n = ctx.IDENTIFIER(0).getText
     if (isReservedWord(n)) {

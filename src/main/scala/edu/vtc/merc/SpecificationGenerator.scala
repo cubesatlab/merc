@@ -3,14 +3,14 @@ package edu.vtc.merc
 import java.io.File
 
 import edu.vtc.merc.TypeRep.IntRep
-import edu.vtc.merc.MercParser.*
+import edu.vtc.merc.MXDRParser.*
 
 class SpecificationGenerator(
   templateFolder : String,
   nameOfFile     : String,
   symbolTable    : BasicSymbolTable,
   out            : java.io.PrintStream,
-  reporter       : Reporter) extends MercBaseVisitor[Void] {
+  reporter       : Reporter) extends MXDRBaseVisitor[Void] {
 
   // The number of indentations where output lines start.
   private var indentationLevel = 0
@@ -64,7 +64,7 @@ class SpecificationGenerator(
     newLines
   }
 
-  override def visitSpecification(ctx: MercParser.SpecificationContext): Void = {
+  override def visitSpecification(ctx: MXDRParser.SpecificationContext): Void = {
     val replacementString = nameOfFile
     val lines = processTemplate()
     for (line <- lines) {
@@ -284,7 +284,7 @@ class SpecificationGenerator(
     null
   }
 
-  override def visitEnum_body(ctx: MercParser.Enum_bodyContext): Void = {
+  override def visitEnum_body(ctx: MXDRParser.Enum_bodyContext): Void = {
     val enumeratorList = ctx.IDENTIFIER
     indentationLevel += 1
     doIndentation()
@@ -334,7 +334,7 @@ class SpecificationGenerator(
   }
 
   //Decode.
-  def doDecode(ctx: MercParser.Struct_bodyContext, id: String, m_i: List[String], arrowFlag: Int): Void = {
+  def doDecode(ctx: MXDRParser.Struct_bodyContext, id: String, m_i: List[String], arrowFlag: Int): Void = {
     val decodeString = "_Decode"
     doIndentation()
     out.println("procedure " + id + decodeString)
@@ -474,7 +474,7 @@ class SpecificationGenerator(
   }
 
   //Encode sending.
-  def doEncode(ctx: MercParser.Struct_bodyContext, id: String, m_i: List[String], arrowFlag: Int): Void = {
+  def doEncode(ctx: MXDRParser.Struct_bodyContext, id: String, m_i: List[String], arrowFlag: Int): Void = {
     val encodeString = "_Encode"
     var stringFlag = ""
     var dataFlag = ""
@@ -786,7 +786,7 @@ class SpecificationGenerator(
     null
   }
 
-  override def visitType_def(ctx: MercParser.Type_defContext): Void = {
+  override def visitType_def(ctx: MXDRParser.Type_defContext): Void = {
     val typeOfTypeDef = ctx.getChild(0).getText
     typeOfTypeDef match {
       case "typedef" =>
@@ -928,7 +928,7 @@ class SpecificationGenerator(
     null
   }
 
-  def visitRange_constraint(ctx: MercParser.Range_constraintContext, floatFlag: Int): Void
+  def visitRange_constraint(ctx: MXDRParser.Range_constraintContext, floatFlag: Int): Void
 
   = {
     var lowerBound = ctx.getChild(0).getText

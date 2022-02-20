@@ -3,7 +3,7 @@ package edu.vtc.merc
 class SemanticAnalyzer(
   nameOfFile : String,
   symbolTable: BasicSymbolTable,
-  reporter   : Reporter) extends MercBaseVisitor[(String, TypeRep.Rep, String)] {
+  reporter   : Reporter) extends MXDRBaseVisitor[(String, TypeRep.Rep, String)] {
 
 
   /*override def visitMessage_struct_type_spec(ctx: MercParser.Message_struct_type_specContext): TypeRep.Rep = {

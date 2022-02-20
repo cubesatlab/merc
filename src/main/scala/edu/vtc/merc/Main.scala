@@ -64,9 +64,9 @@ object Main {
     val codePointCharStream = CharStreams.fromFileName(sourceName)
 
     // Parse the input file as MXDR.
-    val lexer  = new MercLexer(codePointCharStream)
+    val lexer  = new MXDRLexer(codePointCharStream)
     val tokens = new CommonTokenStream(lexer)
-    val parser = new MercParser(tokens)
+    val parser = new MXDRParser(tokens)
     val tree   = parser.specification()
 
     // Walk the tree created during the parse and analyze it for semantic errors.
