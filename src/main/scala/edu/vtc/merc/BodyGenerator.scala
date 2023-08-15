@@ -1,7 +1,7 @@
 package edu.vtc.merc
 
-import edu.vtc.merc.AdaGeneratorCommon.{adaFriendlyTypeName, resolveValue, xdrTypeName}
-import edu.vtc.merc.TypeRep.{ArrayRep, BoolRep, ContinuousRep, DoubleRep, EnumRep, FixedArrayRep, FixedOpaqueRep, FloatRep, HyperRep, IntRep, MStructRep, MXDREntity, NumericRep, OpaqueRep, Rep, StringRep, StructComponent, StructRep, TimeRep, TimeSpanRep, UHyperRep, UIntRep, VariableArrayRep, VariableOpaqueRep, VoidRep}
+import edu.vtc.merc.AdaGeneratorCommon.{adaFriendlyTypeName, xdrTypeName}
+import edu.vtc.merc.TypeRep._
 
 import java.io.File
 
@@ -34,7 +34,7 @@ class BodyGenerator(
   private var indentationLevel = 0
 
   private def doIndentation(): Unit = {
-    for (i <- 0 until indentationLevel)
+    for (_ <- 0 until indentationLevel)
       out.print("   ")
   }
 
@@ -116,7 +116,6 @@ class BodyGenerator(
    */
   private def printEncode(message: MStructRep): Unit = {
     assert(!message.components.exists(component => component.typeRep.isInstanceOf[ArrayRep] && component.typeRep.isAnonymous))
-    val direction = message.direction
     val msgName = message.typeName.get
 
     // Signature
@@ -125,7 +124,7 @@ class BodyGenerator(
     indentationLevel += 1
 
     // Parameters
-    val struct = new MessageStructRep(message, direction, symbolTable)
+    val struct = new AdaGeneratorMessageHelper(message)
     struct.printEncoderParams(indentationLevel, out)
     indentationLevel -= 1
     println("is")
@@ -200,14 +199,12 @@ class BodyGenerator(
         }
 
       case arr: ArrayRep =>
-        val elementType = arr.elementType
-
         if (arr.isInstanceOf[VariableArrayRep]) {
-          println(s"XDR.Encode(XDR.XDR_Unsigned(${valueName}'Length), Payload.all, Position, Last);")
+          println(s"XDR.Encode(XDR.XDR_Unsigned($valueName'Length), Payload.all, Position, Last);")
           println("Position := Last + 1;")
         }
 
-        println(s"for $iteratorName of ${valueName} loop")
+        println(s"for $iteratorName of $valueName loop")
         indentationLevel += 1
         printEncodeComponentIntoPayload(iteratorName, arr.elementType, depth + 1)
         indentationLevel -= 1
@@ -245,7 +242,7 @@ class BodyGenerator(
         printlnOne("begin")
         println(s"XDR.Encode(XDR_Unsigned_Hyper(Time_Float(To_Duration($valueName)) * Big_Float(1_000_000_000.0)), Payload.all, Position, Last);")
         println("Position := Last + 1;")
-        indentationLevel -= 1;
+        indentationLevel -= 1
         println("end;")
 
       case _: TimeRep =>
@@ -261,16 +258,6 @@ class BodyGenerator(
         println("Position := Last + 1;")
         indentationLevel -= 1
         println("end;")
-//        declare
-//        Seconds: Seconds_Count;
-//        Fract: Time_Span;
-//        D: XDR_Hyper;
-//        begin
-//        Split(sv22, Seconds, Fract);
-//        D := XDR_Hyper(Seconds) * 1_000_000_000 + XDR_Hyper(To_Duration(Fract));
-//        XDR.Encode(XDR_Unsigned_Hyper(D), Payload.all, Position, Last);
-//        Position := Last + 1;
-//        end;
 
       case _: OpaqueRep =>
 
@@ -303,8 +290,8 @@ class BodyGenerator(
     indentationLevel += 1
 
     // Parameters
-    val struct = new MessageStructRep(message, direction, symbolTable)
-    val (stringFlag, dataFlag) = struct.printUnsafeSenderParams(indentationLevel, out, withStatus)
+    val struct = new AdaGeneratorMessageHelper(message)
+    val (_, _) = struct.printUnsafeSenderParams(indentationLevel, out, withStatus)
     indentationLevel -= 1
 
     // Declarations
@@ -325,7 +312,7 @@ class BodyGenerator(
     println("Receiver_Address => Receiver_Address,")
     println("Request_ID => Request_ID,")
 
-    struct.getDataParams().foreach(param => {
+    struct.getDataParams.foreach(param => {
       println(param._1 + " => " + param._1 + ",")
     })
 
@@ -338,7 +325,7 @@ class BodyGenerator(
     else println("Message_Manager.Send_Message(Sender, Message);")
 
     indentationLevel -= 1
-    println(s"end Send_${msgName};")
+    println(s"end Send_$msgName;")
     println()
   }
 
@@ -356,8 +343,8 @@ class BodyGenerator(
     indentationLevel += 1
 
     // Parameters
-    val struct = new MessageStructRep(message, direction, symbolTable)
-    val (stringFlag, dataFlag) = struct.printSafeSenderParams(indentationLevel, out, withStatus)
+    val struct = new AdaGeneratorMessageHelper(message)
+    val (_, _) = struct.printSafeSenderParams(indentationLevel, out, withStatus)
 
     // Declarations
     printlnOne("is")
@@ -376,7 +363,7 @@ class BodyGenerator(
     else println("Receiver_Address => (Receiving_Domain.ID, Receiving_Module.Module_ID),")
     println("Request_ID => Request_ID,")
 
-    struct.getDataParams().foreach(param => {
+    struct.getDataParams.foreach(param => {
       println(param._1 + " => " + param._1 + ",")
     })
 
@@ -441,30 +428,28 @@ class BodyGenerator(
             println(s"Raw_$prefix$componentName : ${xdrTypeName(rep)};")
           case _: OpaqueRep =>
         }
-      case _: EnumRep => {
+      case _: EnumRep =>
         println("Raw_" + prefix + componentName + " : XDR.XDR_Unsigned;")
-      }
       case _: StringRep => println("Raw_" + prefix + componentName + "_Size : XDR.XDR_Unsigned;")
       case _: BoolRep =>
         println("Raw_" + prefix + componentName + "   : XDR.XDR_Boolean;")
       case rep: NumericRep =>
         println(s"Raw_$prefix$componentName : ${xdrTypeName(rep)};")
       case _: TimeSpanRep =>
-        println(s"Raw_$prefix${componentName}  : XDR.XDR_Unsigned_Hyper;")
+        println(s"Raw_$prefix$componentName  : XDR.XDR_Unsigned_Hyper;")
       case _: TimeRep =>
         println("Raw_" + prefix + componentName + "   : XDR.XDR_Unsigned_Hyper;")
       case _: VariableOpaqueRep =>
 //        println(s"Raw_$prefix${componentName}_Size : XDR.XDR_Unsigned;")
       case _: FixedOpaqueRep =>
       case r =>
-        throw new Error(s"Unimplemented declarations for ${r}")
+        throw new Error(s"Unimplemented declarations for $r")
     }
   }
 
   /**
    * Generate decoder function for message.
    * @param message The message to decode.
-   * @return
    */
   private def printDecode(message: MStructRep): Unit = {
     val msgName = message.typeName.get
@@ -473,7 +458,7 @@ class BodyGenerator(
     indentationLevel += 1
 
     // The message direction doesn't matter here
-    val rep = new MessageStructRep(message, MessageDirection.In, symbolTable)
+    val rep = new AdaGeneratorMessageHelper(message)
     rep.printDecoderParams(indentationLevel, out)
 
     printlnOne("is")                                    // IS
@@ -526,7 +511,7 @@ class BodyGenerator(
     val iteratorName = "I" + depth
 
     def start_if(condition: String): Unit = {
-      println(s"if ${condition} then")
+      println(s"if $condition then")
       indentationLevel += 1
     }
 
@@ -541,7 +526,7 @@ class BodyGenerator(
 
     // Note that SPARK has a hard time with if not condition return early proofs.
     def return_early_if(condition: String): Unit = {
-      println(s"if ${condition} then Decode_Status := Malformed; return; end if;")
+      println(s"if $condition then Decode_Status := Malformed; return; end if;")
     }
     def else_return(): Unit = {
       printlnOne("else")
@@ -574,7 +559,7 @@ class BodyGenerator(
 
         return_early_if(s"$sizeStore > ${arr.maxSize.value}")
 
-        assign(s"new ${arr.typeName.get}(0 .. ${assignTarget}'Length - 1)")
+        assign(s"new ${arr.typeName.get}(0 .. $assignTarget'Length - 1)")
 
         println(s"for $iteratorName in 0 .. Natural($sizeStore) - 1 loop -- Decoding elements of ${arr.typeName.get} of type ${arr.elementType.typeName.getOrElse(adaFriendlyTypeName(arr.elementType))}")
         indentationLevel += 1
@@ -590,7 +575,7 @@ class BodyGenerator(
         else_return()
 
       case s: StringRep =>
-        val sizeStore = assignTarget.replace('.', '_') + "_Size";
+        val sizeStore = assignTarget.replace('.', '_') + "_Size"
 
         println("declare")
         indentationLevel += 1
@@ -659,7 +644,7 @@ class BodyGenerator(
       case VoidRep => // do nothing!
       
       case rep: VariableOpaqueRep =>
-        val sizeStore = assignTarget.replace('.', '_') + "_Size";
+        val sizeStore = assignTarget.replace('.', '_') + "_Size"
         println("declare")
         indentationLevel += 1
 
@@ -700,7 +685,7 @@ class BodyGenerator(
    * Prints an Ada statement assigning an arbitrary initial value to the
    * given target. The target is an out parameter of a decoder function
    * and as such should use Ada friendly types.
-   * @param assignTarget The string preceeding the := operator.
+   * @param assignTarget The string preceding the := operator.
    * @param typeRep The type of data being assigned.
    * @param depth Counts the number of recursions.
    */
@@ -710,10 +695,7 @@ class BodyGenerator(
     val typeName = typeRep.typeName.getOrElse(adaFriendlyTypeName(typeRep))
 
     typeRep match {
-      case x: NumericRep =>
-        // TODO: The range of numeric types is never explicit
-        // Figure out why that is
-        // println(s"$assignTarget := $typeName(${x.range.lowerBound.value});")
+      case _: NumericRep =>
         println(s"$assignTarget := $typeName'Last;")
       case _: BoolRep =>
         println(s"$assignTarget := False;")
@@ -734,9 +716,9 @@ class BodyGenerator(
         out.print(s"for $iteratorName in ")
 
         arr match {
-          case x: FixedArrayRep =>
+          case _: FixedArrayRep =>
             out.println(s"${assignTarget}'Range loop")
-          case x: VariableArrayRep =>
+          case _: VariableArrayRep =>
             val sizeVar = assignTarget + "'Length - 1"
             out.println(s"0 .. $sizeVar loop")
         }
@@ -750,7 +732,7 @@ class BodyGenerator(
         for (component <- struct.components) {
           printAssignInitialValue(assignTarget + "." + component.name, component.typeRep, depth + 1)
         }
-      case t: TimeRep =>
+      case _: TimeRep =>
         println(s"$assignTarget := $typeName(Time_First);")
       case _: TimeSpanRep =>
         println(s"$assignTarget := $typeName(Time_Span_Zero);")
@@ -778,7 +760,6 @@ class BodyGenerator(
     }
 
     val direction = message.direction
-    val msgName = message.typeName.get
 
     printEncode(message)
     printUnsafeSend(message, direction, withStatus = true)
@@ -808,7 +789,7 @@ class BodyGenerator(
    * @param content The content to print, doesn't include the newline.
    */
   private def printlnOne(content: String): Unit = {
-    for (i <- 0 until indentationLevel - 1) {
+    for (_ <- 0 until indentationLevel - 1) {
       out.print("   ")
     }
     out.println(content)

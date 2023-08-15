@@ -1,10 +1,10 @@
 package edu.vtc.merc
 
-import edu.vtc.merc.AdaGeneratorCommon.{adaFriendlyTypeName, assertMXDRTreeAcceptableForAda, passedByReference, resolveValue}
+import edu.vtc.merc.AdaGeneratorCommon.{adaFriendlyTypeName, assertMXDRTreeAcceptableForAda, passedByReference}
+import edu.vtc.merc.MXDRReadingHelpers.resolveValue
 import edu.vtc.merc.TypeRep._
 
 import java.io.File
-
 
 class SpecificationGenerator(
       templateFolder : String,
@@ -50,15 +50,15 @@ class SpecificationGenerator(
 
 
   private def doIndentation(): Unit = {
-    for (i <- 0 until indentationLevel) {
+    for (_ <- 0 until indentationLevel) {
       out.print("   ")
     }
   }
 
   /**
    * Inserts the given string into a copy of the given list of strings, immediately
-   * after the the given indecator.
-   * @param lineList
+   * after the the given indicator.
+   * @param lineList A list of all the lines in the file.
    * @param str The string to insert.
    * @param indicator The search string to insert after.
    * @return A new list of strings.
@@ -172,7 +172,7 @@ class SpecificationGenerator(
         // Scala doesn't check the T of ConstRep[T], but we don't care
         case constant: ConstRep[Rep @unchecked] => printConstantDef(constant)
         case rep: EnumRep => printEnumDef(symbol, rep)
-        case r: MStructRep => printMessageSpecs(symbol, r)
+        case r: MStructRep => printMessageSpecs(r)
         case r: StructRep => printStructDef(symbol, r)
         case rep: FixedOpaqueRep => doFixedOpaqueDef(symbol, rep)
         case rep: VariableOpaqueRep =>
@@ -187,7 +187,7 @@ class SpecificationGenerator(
           println(s"type ${symbol}_Ptr is access $symbol;")
           println(s"procedure Free is new Ada.Unchecked_Deallocation($symbol, ${symbol}_Ptr);")
           println()
-        case rep: Rep => disbatchBasicTypeDef(symbol, rep)
+        case rep: Rep => doBasicTypeDef(symbol, rep)
         case _ =>
           throw new Error("Unimplemented")
       }
@@ -271,18 +271,17 @@ class SpecificationGenerator(
 
   /**
    * Prints a decoder function for the given message type.
-   * @param msgRep The message to decode.
-   * @param messageInvariants
-   * @param direction
+   * @param message The message to decode.
+   * @param direction If the message is sent of received by the module.
    */
-  def printDecode(msgRep: MStructRep, messageInvariants: List[String], direction: MessageDirection.Value): Unit ={
-    val msgName = msgRep.typeName.get
+  def printDecode(message: MStructRep, direction: MessageDirection.Value): Unit ={
+    val msgName = message.typeName.get
     val decodeString = "_Decode"
     println("procedure " + msgName + decodeString)
     indentationLevel += 1
 
     // Print parameters for the message content
-    val rep = new MessageStructRep(msgRep, direction, symbolTable)
+    val rep = new AdaGeneratorMessageHelper(message)
     rep.printDecoderParams(indentationLevel, out)
 
     indentationLevel -= 1
@@ -310,12 +309,12 @@ class SpecificationGenerator(
     out.println("")
 
     // Print the message invariants
-    for (i <- messageInvariants.indices) {
-      if (i == messageInvariants.size - 1) {
-        println("Post => " + messageInvariants(i) + ";")
+    for (i <- message.invariants.indices) {
+      if (i == message.invariants.size - 1) {
+        println("Post => " + message.invariants(i) + ";")
       }
       else {
-        println("Post => " + messageInvariants(i) + ",")
+        println("Post => " + message.invariants(i) + ",")
       }
     }
     indentationLevel -= 1
@@ -327,7 +326,6 @@ class SpecificationGenerator(
    * Write a message encoder subprogram.
    * @param msgRep The message being encoded.
    * @param messageInvariants Message component identifiers.
-   * @param direction
    */
   def printEncode(msgRep: MStructRep, messageInvariants: List[String], direction: MessageDirection.Value): Unit = {
     val msgName = msgRep.typeName.get
@@ -336,9 +334,9 @@ class SpecificationGenerator(
     println("procedure " + msgName + encodeString)
     indentationLevel += 1
 
-    val struct = new MessageStructRep(msgRep, direction, symbolTable)
+    val struct = new AdaGeneratorMessageHelper(msgRep)
     // Parameters
-    val (stringFlag, dataFlag) = struct.printEncoderParams(indentationLevel, out)
+    val (stringFlag, _) = struct.printEncoderParams(indentationLevel, out)
 
     // Aspects
     indentationLevel -= 1
@@ -355,16 +353,6 @@ class SpecificationGenerator(
       preConditions = preConditions :+ s"Receiver_Address.Module_ID = This_Module"
     } else if (direction == MessageDirection.Out) { // Sending module id is known at compile time
       preConditions = preConditions :+ s"Sender_Address.Module_ID = This_Module"
-    }
-
-    for (component <- msgRep.components) {
-//      if (component.typeRep.isInstanceOf[TimeSpanRep]) {
-//        preConditions = preConditions :+ s"Ada.Real_Time.\">=\"(Ada.Real_Time.Time_Span(${component.name}), Ada.Real_Time.Time_Span_Zero)"
-//        preConditions = preConditions :+ s"Ada.Real_Time.\"<=\"(Ada.Real_Time.Time_Span(${component.name}), XDR.Max_Time_Span)"
-//      } else if (component.typeRep.isInstanceOf[TimeRep]) {
-//        preConditions = preConditions :+ s"Ada.Real_Time.\">=\"(Ada.Real_Time.Time(${component.name}), Ada.Real_Time.Time_First)"
-//        preConditions = preConditions :+ s"Ada.Real_Time.\"<=\"(Ada.Real_Time.Time(${component.name}), XDR.Max_Time)"
-//      }
     }
 
     if (preConditions.nonEmpty) {
@@ -404,12 +392,10 @@ class SpecificationGenerator(
     println("procedure Send_" + msgName)
     indentationLevel += 1
 
-    val typeRep = symbolTable.getType[MStructRep](msgName)
-
-    val struct = new MessageStructRep(msgRep, direction, symbolTable)
+    val struct = new AdaGeneratorMessageHelper(msgRep)
 
     // Parameters
-    val (stringFlag, dataFlag) = struct.printUnsafeSenderParams(indentationLevel, out, withStatus)
+    val (stringFlag, _) = struct.printUnsafeSenderParams(indentationLevel, out, withStatus)
 
     // Aspects
     indentationLevel -= 1
@@ -459,11 +445,11 @@ class SpecificationGenerator(
     val msgName = msgRep.typeName.get
     println("procedure Send_" + msgName)
     indentationLevel += 1
-    val typeRep = symbolTable.getType[MStructRep](msgName)
-    val struct = new MessageStructRep(msgRep, direction, symbolTable)
+    val _ = symbolTable.getType[MStructRep](msgName)
+    val struct = new AdaGeneratorMessageHelper(msgRep)
 
     // Parameters
-    val (stringFlag, dataFlag) = struct.printSafeSenderParams(indentationLevel, out, withStatus)
+    val (stringFlag, _) = struct.printSafeSenderParams(indentationLevel, out, withStatus)
 
     // Aspects
     indentationLevel -= 1
@@ -503,14 +489,16 @@ class SpecificationGenerator(
     out.println("")
   }
 
-  //Check sending.
-  def doCheck(msgRep: MStructRep): Unit ={
+  /**
+   * Print the check message type function.
+   * @param message The message to check.
+   */
+  private def doCheck(message: MStructRep): Unit ={
     val checkString = "Is_"
-    println("function " + checkString + msgRep.typeName.get + "(Message : Message_Record) return Boolean is")
+    println("function " + checkString + message.typeName.get + "(Message : Message_Record) return Boolean is")
     indentationLevel += 1
-    println(s"(CubedOS.Message_Types.Message_Type(Message) = ${msgRep.typeName.get}_Msg);")
+    println(s"(CubedOS.Message_Types.Message_Type(Message) = ${message.typeName.get}_Msg);")
     indentationLevel -= 1
-
   }
 
   /**
@@ -520,7 +508,6 @@ class SpecificationGenerator(
    *    ... <- This stuff
    *  end record;
    * @param components The struct's components.
-   * @return
    */
   private def printStructComponents(components: List[StructComponent]): Unit ={
     indentationLevel += 1
@@ -547,7 +534,7 @@ class SpecificationGenerator(
   }
 
   /**
-   *
+   * $constName : constant $constType := $constValue;
    * @param constRep Must be named.
    */
   private def printConstantDef(constRep: ConstRep[Rep]): Unit ={
@@ -565,19 +552,6 @@ class SpecificationGenerator(
 
     out.println(s" := ${constRep.value};")
     println()
-
-
-//    doIndentation()
-//    val value = ctx.CONSTANT.getText
-//    if (ctx.getChildCount == 5) {
-//      val id = ctx.IDENTIFIER(0).getText
-//      out.println(id + ": constant := " + value + ";" + "\n")
-//    }
-//    else if (ctx.getChildCount == 7) {
-//      val id = ctx.IDENTIFIER(0).getText
-//      out.println(id + ": constant " + ctx.IDENTIFIER(1).getText + " := " + value + ";" + "\n")
-//    }
-
   }
 
   /**
@@ -602,9 +576,9 @@ class SpecificationGenerator(
   }
 
   /**
-   * Dispatches basic type definitions.
+   * Prints definitions for the basic types.
    */
-  private def disbatchBasicTypeDef(name: String, typeRep: Rep): Unit = {
+  private def doBasicTypeDef(name: String, typeRep: Rep): Unit = {
     val isRanged = typeRep.isInstanceOf[Ranged] && typeRep.asInstanceOf[Ranged].isExplicit
     val isSubtype = typeRep.isSubtype
 
@@ -640,7 +614,6 @@ class SpecificationGenerator(
     out.println("")
   }
 
-
   private def printEnumValues(components: List[EnumValue]): Unit = {
     if (components.isEmpty) return
 
@@ -659,7 +632,12 @@ class SpecificationGenerator(
     }
   }
 
-
+  /**
+   * type $name is
+   *    record
+   *     ...
+   *    end record;
+   */
   private def printStructDef(name: String, structRep: StructRep): Unit ={
     println("type " + name + " is ")
     indentationLevel += 1
@@ -673,27 +651,26 @@ class SpecificationGenerator(
   /**
    * Prints the specifications for the given message struct type.
    * Includes the encode, decoder, send and check subprograms.
-   * @param msgName The name of the message struct.
-   * @param msgRep
    */
-  private def printMessageSpecs(msgName: String, msgRep: MStructRep): Unit = {
-    val direction = msgRep.direction
-    val messageInvariants = msgRep.invariants
+  private def printMessageSpecs(message: MStructRep): Unit = {
+    val direction = message.direction
+    val messageInvariants = message.invariants
 
-//    if (msgRep.isVoid && msgRep.components.components.size > 1) {
+    // TODO: Move this kind of thing to the semantic analyzer
+//    if (message.isVoid && message.components.components.size > 1) {
 //      System.out.println("Can't have multiple message struct")
 //      System.out.println("parameters included with void.")
 //      return
 //    }
 
-    printEncode(msgRep, messageInvariants, direction)
-    printUnsafeSend(msgRep, messageInvariants, direction, withStatus = false)
-    printUnsafeSend(msgRep, messageInvariants, direction, withStatus = true)
-    printSafeSend(msgRep, messageInvariants, direction, withStatus = false)
-    printSafeSend(msgRep, messageInvariants, direction, withStatus = true)
-    doCheck(msgRep)
-    if (!msgRep.isVoid)
-      printDecode(msgRep, messageInvariants, direction)
+    printEncode(message, messageInvariants, direction)
+    printUnsafeSend(message, messageInvariants, direction, withStatus = false)
+    printUnsafeSend(message, messageInvariants, direction, withStatus = true)
+    printSafeSend(message, messageInvariants, direction, withStatus = false)
+    printSafeSend(message, messageInvariants, direction, withStatus = true)
+    doCheck(message)
+    if (!message.isVoid)
+      printDecode(message, direction)
   }
 
   /**

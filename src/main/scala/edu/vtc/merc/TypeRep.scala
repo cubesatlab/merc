@@ -4,8 +4,8 @@ import scala.annotation.unused
 
 
 /**
- * Defines several types used as discriminants along
- * with some attributes about the XDR implementation.
+ * Defines several data types. These types can compose each other
+ * and store data about themselves.
  */
 object TypeRep {
 
