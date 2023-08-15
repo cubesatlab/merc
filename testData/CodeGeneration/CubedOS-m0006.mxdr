@@ -1,0 +1,17 @@
+// Time test messages
+
+typedef Ada.Real_Time.Time Pizza_Time;
+
+message struct <- Time_Message {
+	Ada.Real_Time.Time time1;
+	Ada.Real_Time.Time time2;
+	Pizza_Time time3;
+};
+
+typedef Ada.Real_Time.Time_Span Turtle_Time;
+
+message struct <- Time_Span_Message {
+	Ada.Real_Time.Time_Span span1;
+	Ada.Real_Time.Time_Span span2;
+	Turtle_Time span3;
+};
