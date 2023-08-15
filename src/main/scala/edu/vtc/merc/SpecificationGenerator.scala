@@ -1,19 +1,53 @@
 package edu.vtc.merc
 
+import edu.vtc.merc.AdaGeneratorCommon.{adaFriendlyTypeName, assertMXDRTreeAcceptableForAda, passedByReference, resolveValue}
+import edu.vtc.merc.TypeRep._
+
 import java.io.File
 
-import edu.vtc.merc.TypeRep.IntRep
-import edu.vtc.merc.MXDRParser.*
 
 class SpecificationGenerator(
-  templateFolder : String,
-  nameOfFile     : String,
-  symbolTable    : BasicSymbolTable,
-  out            : java.io.PrintStream,
-  reporter       : Reporter) extends MXDRBaseVisitor[Void] {
+      templateFolder : String,
+
+      /**
+       * Everything that comes before the module name,
+       * properly capitalized. In the case of the module
+       * CubedOS.Time_Server,
+       * the prefix is "CubedOS", not including the dot.
+       * May be empty.
+       */
+      modulePrefix : String,
+      /**
+       * The properly capitalized module name, no dots.
+       * Doesn't include "-.API".
+       */
+      moduleName     : String,
+      /**
+       * The file name of the specification file being written to.
+       * Ex) cubedos-time_server-api.ads
+       */
+      fileName       : String,
+      symbolTable    : BasicSymbolTable,
+      mxdrTree       : MXDRTree,
+      dependencyReader: DependencyReader,
+      out            : java.io.PrintStream,
+      reporter       : Reporter) {
 
   // The number of indentations where output lines start.
   private var indentationLevel = 0
+  // All the message types this module may receive
+  // Doesn't include "_Msg", only the name of the message type.
+  private val receiveTypes = dependencyReader.receiveMessages
+  // Contains the package name of every module this one depends on.
+  // For a Ping_Client module which receives Ping_Reply messages
+  // defined by a Ping_Server module, this list will contain
+  // "Ping_Server".
+  // If the Ping_Client receives messages defined by the
+  // CubedOS.Time_Server module, the set includes
+  // "CubedOS.Time_Server". The strings should be legal
+  // ada imports.
+  private val packageDependencies = dependencyReader.dependsOn
+
 
   private def doIndentation(): Unit = {
     for (i <- 0 until indentationLevel) {
@@ -21,1030 +55,654 @@ class SpecificationGenerator(
     }
   }
 
-  private def insertLine(bulk: List[String], str: String, indicator: String): List[String] = {
-    var newBulk = List[String]()
-    for (line <- bulk) {
-      newBulk = line :: newBulk
+  /**
+   * Inserts the given string into a copy of the given list of strings, immediately
+   * after the the given indecator.
+   * @param lineList
+   * @param str The string to insert.
+   * @param indicator The search string to insert after.
+   * @return A new list of strings.
+   */
+  private def insertLine(lineList: List[String], str: String, indicator: String): List[String] = {
+    var result = List[String]()
+    for (line <- lineList) {
+      result = line :: result
       if (line.contains(indicator)) {
-        newBulk = ("\n" + str) :: newBulk
+        result = ("\n" + str) :: result
       }
     }
-    newBulk.reverse
+    result.reverse
   }
 
-  def addedLines(lines: List[String]): List[String] = {
+  /**
+   * Creates a new list of strings with some added lines
+   * which may be conditionally necessary.
+   * @param input The initial list of strings.
+   * @return A new list of strings with the necessary additions.
+   */
+  private def addNecessaryImports(input: List[String]): List[String] = {
     var flagTimer = 0
     for (i <- symbolTable.getMStructs) {
-      for (ii <- symbolTable.getSType(i)) {
-        val s = symbolTable.getST(i, ii)
+      for (ii <- symbolTable.getStructComponentNames(i)) {
+        val s = symbolTable.getStructComponentTypeName(i, ii)
         if (s.contains("TimeSpanRep") ||
           s.contains("TimeRep")) {
           flagTimer = 1
         }
       }
     }
-    var l = List[String]()
+    var result = List[String]()
     if (flagTimer == 1) {
       val s1 = "with Ada.Real_Time;"
       val a1 = "SPARK_Mode(On);"
-      val finalTemplateLines = insertLine(lines, s1, a1)
-      l = finalTemplateLines
+      val finalTemplateLines = insertLine(input, s1, a1)
+      result = finalTemplateLines
     }
     else {
-      l = lines
+      result = input
     }
-    l
+    result
   }
 
+  /**
+   * Loads the template.ads file into a list of lines
+   * and then does some modifications to it before
+   * returning it.
+   */
   def processTemplate(): List[String] = {
     val source = scala.io.Source.fromFile(templateFolder + File.separator + "template.ads")
-    val lines = source.getLines().toList
-    val newLines = addedLines(lines)
+    var result = source.getLines().toList
     source.close()
-    newLines
+    result = addNecessaryImports(result)
+    result
   }
 
-  override def visitSpecification(ctx: MXDRParser.SpecificationContext): Void = {
-    val replacementString = nameOfFile
+  def generate(): Unit = {
+    assertMXDRTreeAcceptableForAda(mxdrTree)
     val lines = processTemplate()
     for (line <- lines) {
-      val newLine = line.replace("%MODULENAME%", replacementString)
+      val prefixString = if (modulePrefix.isEmpty) "" else modulePrefix + "."
+      val newLine = line.replace("%MODULENAME%", prefixString + moduleName)
+                        .replace("%FILENAME%", fileName)
       if (line.contains("%BULK%")) {
-        indentationLevel += 1
-        doIndentation()
-        out.println("type Message_Type is")
-        indentationLevel += 1
-        doIndentation()
-        out.print("(")
-        val n = symbolTable.getMStructs
-        for (name <- n) {
-          if (name == n.last) {
-            if (n.size == 1) {
-              out.println(name + ");")
-            }
-            else {
-              doIndentation()
-              out.println(name + ");")
-            }
-          }
-          else {
-            if (name == n.head) {
-              out.println(name + ", ")
-            }
-            else {
-              doIndentation()
-              out.println(name + ", ")
-            }
-          }
+        generateBulk()
+      }
+      else if (line.contains("%SPECIMPORTS%")) {
+        for (dependency <- packageDependencies) {
+          println(s"with $dependency.API; use $dependency.API;")
         }
-        out.println("")
-        indentationLevel -= 1
-        visitChildren(ctx)
-        indentationLevel -= 1
       }
       else {
         out.println(newLine)
       }
     }
-    null
   }
 
-  override def visitDefinition(ctx: DefinitionContext): Void = {
-    visitChildren(ctx)
-    null
-  }
+  private def generateBulk(): Unit = {
+    indentationLevel += 1
+    println("pragma Elaborate_Body;")
+    println("type Octet_Array_Ptr is access CubedOS.Lib.Octet_Array;")
+    println("type String_Ptr is access String;")
+    println()
+    println(s"This_Module : constant Module_ID_Type := Name_Resolver.$moduleName;")
+    println()
 
-  override def visitLine(ctx: LineContext): Void = {
-    doIndentation()
-    visitDeclaration(ctx.declaration())
-    out.println(";")
-    out.println("")
-    null
-  }
+    // Message type enum
+    // This file may be only imports and not define any types
+    if (symbolTable.getMStructs.nonEmpty)
+      printMessageTypeEnum()
 
-  override def visitDeclaration(ctx: DeclarationContext): Void = {
-    out.print("type ")
-    val n = if (ctx.children.contains(ctx.IDENTIFIER)) {
-      if (ctx.children.contains(ctx.LBRACKET) && ctx.children.contains(ctx.RBRACKET)) {
-        if (ctx.type_specifier.children.contains(ctx.type_specifier.struct_type_spec)) {
-          ctx.IDENTIFIER.getText + "_Intermediary"
-        }
-        else if (ctx.type_specifier.children.contains(ctx.type_specifier.enum_type_spec)) {
-          ctx.IDENTIFIER.getText + "_Intermediary"
-        }
-        else {
-          ctx.IDENTIFIER.getText
-        }
-      }
-      else {
-        ctx.IDENTIFIER.getText
-      }
+    // Write universal message type declarations
+    for (name <- symbolTable.getMStructs) {
+      println(s"${name}_Msg : constant Universal_Message_Type := (This_Module, Message_Type'Pos($name));")
     }
-    else {
-      ctx.VOID.getText
-    }
-    out.print(n)
-    if (!ctx.children.contains(ctx.VOID)) {
-      out.print(" is")
-      ctx.start.getText match {
-        case "opaque" =>
-          out.print(" new CubedOS.Lib.Octet_Array")
-        case "string" =>
-          out.print(" new String")
-        case "enum" =>
-          if (ctx.children.contains(ctx.LBRACKET) && ctx.children.contains(ctx.RBRACKET)) {
-            val id = ctx.IDENTIFIER.getText
-            out.println("")
-            visitType_specifier(ctx.type_specifier)
-            out.println(";")
-            out.println("")
-            doIndentation()
-            out.print("type " + id + " is array (0 .. " + ctx.value.CONSTANT.toString + ") of " + id + "_Intermediary")
-          }
-          else {
-            out.println("")
-            visitType_specifier(ctx.type_specifier)
-          }
-        case "struct" =>
-          if (ctx.children.contains(ctx.LBRACKET) && ctx.children.contains(ctx.RBRACKET)) {
-            val id = ctx.IDENTIFIER.getText
-            indentationLevel += 1
-            out.println("")
-            doIndentation()
-            out.println("record")
-            visitStruct_body(ctx.type_specifier.struct_type_spec.struct_body, id)
-            doIndentation()
-            out.println("end record;")
-            out.println("")
-            indentationLevel -= 1
-            doIndentation()
-            out.print("type " + id + " is array (0 .. " + ctx.value.CONSTANT.toString + ") of " + id + "_Intermediary")
-          }
-          else {
-            val id = ctx.IDENTIFIER.getText
-            indentationLevel += 1
-            out.println("")
-            doIndentation()
-            out.println("record")
-            visitStruct_body(ctx.type_specifier.struct_type_spec.struct_body, id)
-            doIndentation()
-            out.print("end record")
-            indentationLevel -= 1
-          }
+    println()
+
+    printModuleMetadata()
+    println()
+
+    for (entityType <- mxdrTree.getItems[MXDREntity]()) {
+      val symbol = entityType match {
+        case x: Rep =>
+          x.typeName.get
         case _ =>
-          if (ctx.getChild(0).getText == n || ctx.getChild(0).getText == n.toString.substring(0, n.toString.indexOf("_") + 1)) {
-            out.print(" " + n)
-          }
-          else {
-            if (ctx.children.contains(ctx.LBRACKET) && ctx.children.contains(ctx.RBRACKET)) {
-              visitType_specifier(ctx.type_specifier)
-            }
-            else {
-              visitType_specifier2(ctx.type_specifier)
-            }
-            if (ctx.children.contains(ctx.CONSTANT)) {
-              out.print(" := " + ctx.CONSTANT.getText)
-            }
-          }
-        /*case "union" =>*/
+          "" // This value should never be used
       }
-    }
-    null
-  }
-
-  override def visitValue(ctx: ValueContext): Void = {
-    if (ctx.children.contains(ctx.CONSTANT)) {
-      out.print(ctx.CONSTANT.getText)
-    }
-    else if (ctx.children.contains(ctx.IDENTIFIER)) {
-      out.print(ctx.IDENTIFIER.getText)
-    }
-    null
-  }
-
-  def visitType_specifier2(ctx: Type_specifierContext): Void = {
-    ctx.getStart.getText match {
-      case "int" => out.print(" new Integer")
-      case "unsigned" => if (ctx.children.contains(ctx.INT)) {
-        out.print(" new Lib.Quadruple_Octet")
-      }
-      else if (ctx.children.contains(ctx.HYPER)) {
-        out.print(" new Lib.U_Hyper_Type")
-      }
-      case "hyper" => out.print(" new Lib.Hyper_Type")
-      case "float" => out.print(" new Float")
-      case "double" => out.print(" new Double")
-      case "quadruple" => out.print(" new Quadruple")
-      case "bool" => out.print(" new Boolean")
-      case "string" => out.print(" new String")
-      case "enum" => visitEnum_type_spec(ctx.enum_type_spec)
-      case "struct" => visitStruct_type_spec(ctx.struct_type_spec)
-      case "union" => visitUnion_type_spec(ctx.union_type_spec)
-      case _ =>
-        out.print(" new " + ctx.getText)
-    }
-    null
-  }
-
-  override def visitType_specifier(ctx: Type_specifierContext): Void = {
-    ctx.getStart.getText match {
-      case "int" => out.print(" array (0 .. " + symbolTable.getArraySize(ctx.parent.getChild(1).getText) + ") of Integer")
-      case "unsigned" => if (ctx.children.contains(ctx.INT)) {
-        out.print(" array (0 .. " + symbolTable.getArraySize(ctx.parent.getChild(1).getText) + ") of Lib.Quadruple_Octet")
-      }
-      else if (ctx.children.contains(ctx.HYPER)) {
-        out.print(" array (0 .. " + symbolTable.getArraySize(ctx.parent.getChild(1).getText) + ") of Lib.U_Hyper_Type")
-      }
-      case "hyper" => out.print(" array (0 .. " + symbolTable.getArraySize(ctx.parent.getChild(1).getText) + ") of Lib.Hyper_Type")
-      case "float" => out.print(" array (0 .. " + symbolTable.getArraySize(ctx.parent.getChild(1).getText) + ") of Float")
-      case "double" => out.print(" array (0 .. " + symbolTable.getArraySize(ctx.parent.getChild(1).getText) + ") of Double")
-      case "quadruple" => out.print(" array (0 .. " + symbolTable.getArraySize(ctx.parent.getChild(1).getText) + ") of Quadruple")
-      case "bool" => out.print(" array (0 .. " + symbolTable.getArraySize(ctx.parent.getChild(1).getText) + ") of Boolean")
-      case "string" => out.print(" array (0 .. " + symbolTable.getArraySize(ctx.parent.getChild(1).getText) + ") of String")
-      case "enum" => visitEnum_type_spec(ctx.enum_type_spec)
-      case "struct" =>
-        visitStruct_type_spec(ctx.struct_type_spec)
-        out.print(" array (0 .. " + symbolTable.getArraySize(ctx.parent.getChild(1).getText) + ") of " + ctx.parent.getChild(1).getText + "_Intermediary")
-      case "union" => visitUnion_type_spec(ctx.union_type_spec)
-      case _ =>
-        if (symbolTable.getTypeRepresentation(ctx.parent.getChild(1).getText).toString.contains("ArrayRep")) {
-          if (symbolTable.getArrayType(ctx.parent.getChild(1).getText) == IntRep || ctx.children.contains(ctx.INT())) {
-            out.print(" array (0 .. " + symbolTable.getArraySize(ctx.parent.getChild(1).getText) + ") of Integer")
-          }
-          else if (ctx.children.contains(ctx.IDENTIFIER)) {
-            out.print(" array (0 .. " + symbolTable.getArraySize(ctx.parent.getChild(1).getText) + ") of " + ctx.IDENTIFIER())
-          }
-        }
-    }
-    null
-  }
-
-  override def visitEnum_type_spec(ctx: Enum_type_specContext): Void = {
-    visitEnum_body(ctx.enum_body)
-    null
-  }
-
-  override def visitEnum_body(ctx: MXDRParser.Enum_bodyContext): Void = {
-    val enumeratorList = ctx.IDENTIFIER
-    indentationLevel += 1
-    doIndentation()
-    out.print("(")
-    if (!ctx.getChild(2).getText.equals(",")) {
-      val v = ctx.IDENTIFIER.size
-      for (i <- 0 until v) {
-        val enumerator = ctx.IDENTIFIER(i).getText
-        var vr = ""
-        if (ctx.children.contains(ctx.value)) {
-          if (ctx.value(i).children.contains(ctx.value(i).CONSTANT)) {
-            vr = ctx.value(i).CONSTANT.getText
-          }
-          else {
-            vr = ctx.value(i).IDENTIFIER.getText
-          }
-          out.print(enumerator + " = " + vr)
-        }
-        else {
-          out.print(enumerator)
-        }
-        if (i < (v - 1)) {
-          out.println(", ")
-          doIndentation()
-        }
-      }
-    }
-    else {
-      val it = enumeratorList.iterator
-      while (it.hasNext) {
-        val enumerator = it.next()
-        out.print(enumerator.getText)
-        if (it.hasNext) {
-          out.println(", ")
-          doIndentation()
-        }
+      entityType match {
+        // Scala doesn't check the T of ConstRep[T], but we don't care
+        case constant: ConstRep[Rep @unchecked] => printConstantDef(constant)
+        case rep: EnumRep => printEnumDef(symbol, rep)
+        case r: MStructRep => printMessageSpecs(symbol, r)
+        case r: StructRep => printStructDef(symbol, r)
+        case rep: FixedOpaqueRep => doFixedOpaqueDef(symbol, rep)
+        case rep: VariableOpaqueRep =>
+          println(s"type $symbol is new ${adaFriendlyTypeName(rep)}")
+          println(s"   with Dynamic_Predicate => $symbol'Length <= ${rep.maxBytes.value};")
+          println(s"type ${symbol}_Ptr is access $symbol;")
+          println()
+        case arr: ArrayRep => doArrayDef(symbol, arr)
+        case rep: StringRep =>
+          println(s"subtype $symbol is ${rep.baseTypeName.getOrElse(adaFriendlyTypeName(rep))}")
+          println(s"   with Dynamic_Predicate => $symbol'Length <= ${rep.maxLength};")
+          println(s"type ${symbol}_Ptr is access $symbol;")
+          println(s"procedure Free is new Ada.Unchecked_Deallocation($symbol, ${symbol}_Ptr);")
+          println()
+        case rep: Rep => disbatchBasicTypeDef(symbol, rep)
+        case _ =>
+          throw new Error("Unimplemented")
       }
     }
     indentationLevel -= 1
-    out.print(")")
-    null
   }
 
-  override def visitStruct_type_spec(ctx: Struct_type_specContext): Void = {
-    visitStruct_body(ctx.struct_body)
-    null
+  private def doArrayDef(symbol: String, typeRep: ArrayRep): Unit = {
+    typeRep match {
+      case arr: FixedArrayRep =>
+        println(s"type $symbol is array (1..${arr.size.value}) of ${arr.elementType.typeName.getOrElse(adaFriendlyTypeName(arr.elementType))};")
+      case arr: VariableArrayRep =>
+        println(s"type $symbol is array (Natural range <>) of ${arr.elementType.typeName.getOrElse(adaFriendlyTypeName(arr.elementType))};")
+        println(s"type ${symbol}_Ptr is access $symbol;")
+    }
   }
 
-  //Decode.
-  def doDecode(ctx: MXDRParser.Struct_bodyContext, id: String, m_i: List[String], arrowFlag: Int): Void = {
+  private def doFixedOpaqueDef(name: String, typeRep: FixedOpaqueRep): Unit = {
+    println(s"type $name is new ${adaFriendlyTypeName(typeRep)}(1..${typeRep.bytes.value});")
+    println()
+  }
+
+  /**
+   * Prints the definition for the Message_Type enum.
+   */
+  private def printMessageTypeEnum(): Unit = {
+    doIndentation()
+    out.println("type Message_Type is")
+    indentationLevel += 1
+    doIndentation()
+    out.print("(")
+    val n = symbolTable.getMStructs
+    for (name <- n) {
+      if (name == n.last) {
+        if (n.size == 1) {
+          out.println(name + ");")
+        }
+        else {
+          println(name + ");")
+        }
+      }
+      else {
+        if (name == n.head) {
+          out.println(name + ", ")
+        }
+        else {
+          println(name + ", ")
+        }
+      }
+    }
+    out.println("")
+    indentationLevel -= 1
+  }
+
+  /**
+   * Prints the information necessary for a module to implement
+   * the API.
+   * - the This_Receives list
+   * - the Module_Metadata constant.
+   */
+  private def printModuleMetadata(): Unit = {
+    doIndentation()
+    out.print("This_Receives : aliased constant Message_Type_Array := ")
+    if (receiveTypes.size == 1) {
+      out.println("(0 => " + receiveTypes.last + "_Msg);")
+    } else if (receiveTypes.nonEmpty) {
+      out.println("(")
+      for (typeName <- receiveTypes) {
+        doIndentation()
+        out.print("" + typeName + "_Msg")
+        if (typeName == receiveTypes.last)
+          out.println(");")
+        else out.println(",")
+      }
+    } else {
+      out.println("Empty_Type_Array;")
+    }
+
+    println("Mail_Target : aliased constant Module_Metadata := Define_Module(This_Module, This_Receives'Access);")
+  }
+
+  /**
+   * Prints a decoder function for the given message type.
+   * @param msgRep The message to decode.
+   * @param messageInvariants
+   * @param direction
+   */
+  def printDecode(msgRep: MStructRep, messageInvariants: List[String], direction: MessageDirection.Value): Unit ={
+    val msgName = msgRep.typeName.get
     val decodeString = "_Decode"
-    doIndentation()
-    out.println("procedure " + id + decodeString)
+    println("procedure " + msgName + decodeString)
     indentationLevel += 1
-    doIndentation()
-    out.println("(Message : in  Message_Record;")
-    val structStuff = ctx.declaration.size()
-    for (i <- 0 until structStuff) {
-      doIndentation()
-      val t = ctx.declaration(i).children.get(0).getText
-      val id = ctx.declaration(i).IDENTIFIER.getText
-      if (t == "opaque") {
-        out.println(id + " : out CubedOS.Lib.Octet_Array;")
-        doIndentation()
-        out.println("Size : out CubedOS.Lib.Octet_Array_Count;")
-      }
-      else if (t == "string") {
-        out.println(id + " : out String;")
-        doIndentation()
-        out.println(id + "_Size : out " + "Natural;")
-      }
-      else if (t == "CubedOS.Lib.Octet_Array") {
-        out.println(id + " : out " + ctx.declaration(i).type_specifier.getText + ";")
-        doIndentation()
-        out.println("Size : out CubedOS.Lib.Octet_Array_Count;")
-      }
-      else if (t == "int") {
-        out.println(id + " : out Integer;")
-      }
-      else if (t == "unsignedhyper") {
-        out.println(id + " : out Lib.U_Hyper_Type;")
-      }
-      else if (t == "unsignedint") {
-        out.println(id + " : out Lib.Quadruple_Octet;")
-      }
-      else if (t == "double") {
-        out.println(id + " : out Double;")
-      }
-      else if (t == "float") {
-        out.println(id + " : out Float;")
-      }
-      else if (t == "hyper") {
-        out.println(id + " : out Lib.Hyper_Type;")
-      }
-      else if (t == "bool") {
-        out.println(id + " : out Boolean;")
-      }
-      else {
-        out.println(id + " : out " + ctx.declaration(i).type_specifier.getText + ";")
-      }
-    }
-    doIndentation()
-    out.println("Decode_Status : out Message_Status_Type)")
+
+    // Print parameters for the message content
+    val rep = new MessageStructRep(msgRep, direction, symbolTable)
+    rep.printDecoderParams(indentationLevel, out)
+
     indentationLevel -= 1
-    doIndentation()
-    out.println("with")
+    println("with")
     indentationLevel += 1
-    doIndentation()
-    out.println("Global => null,")
-    doIndentation()
-    out.println("Pre => Is_" + id + "(Message),")
-    doIndentation()
-    out.print("Depends => ((")
-    for (i <- 0 until structStuff) {
-      val t = if (ctx.declaration(i).children.contains(ctx.declaration(i).type_specifier)) {
-        ctx.declaration(i).type_specifier.getText
-      }
-      else if (ctx.declaration(i).children.contains(ctx.declaration(i).OPAQUE)) {
-        "CubedOS.Lib.Octet_Array"
-      }
-      else if (ctx.declaration(i).children.contains(ctx.declaration(i).STRING)) {
-        "string"
-      }
-      else {
-        ""
-      }
-      val id = ctx.declaration(i).IDENTIFIER.getText
-      if (i == structStuff - 1) {
-        if (m_i.isEmpty) {
-          if (t == "string" ||
-            ctx.declaration(i).children.contains(ctx.declaration(i).STRING)) {
-            out.print(id + ", ")
-            out.print(id + "_Size, Decode_Status) => Message);")
-          }
-          else if (t == "CubedOS.Lib.Octet_Array" || t == "opaque") {
-            out.print(id + ", ")
-            out.print("Size, Decode_Status) => Message);")
-          }
-          else {
-            out.print(id + ", Decode_Status) => Message);")
-          }
-        }
-        else {
-          if (t == "string" ||
-            ctx.declaration(i).children.contains(ctx.declaration(i).STRING)) {
-            out.print(id + ", ")
-            out.print(id + "_Size, Decode_Status) => Message),")
-          }
-          else if (t == "CubedOS.Lib.Octet_Array" || t == "opaque") {
-            out.print(id + ", ")
-            out.print("Size, Decode_Status) => Message),")
-          }
-          else {
-            out.print(id + ", Decode_Status) => Message),")
-          }
-        }
-      }
-      else {
-        if (t == "string" ||
-          ctx.declaration(i).children.contains(ctx.declaration(i).STRING)) {
-          out.print(id + ", ")
-          out.print(id + "_Size, ")
-        }
-        else if (t == "CubedOS.Lib.Octet_Array" || t == "opaque") {
-          out.print(id + ", ")
-          out.print("Size, ")
-        }
-        else {
-          out.print(id + ", ")
-        }
-      }
-    }
+    println("Global => null,")
+    println("Pre => Is_" + msgName + "(Message) and Payload(Message) /= null;")
+
+    // All outputs depend on the message
+//    doIndentation()
+//    out.print("Depends => ((")
+//    val components = symbolTable.getStructComponentNames(msgName).toList
+//    val commaSeparatedComponentList = components.reduce((existingList, componentName) => {
+//      val t = symbolTable.getStructComponentTypeName(msgName, componentName)
+//
+//      var newList = existingList + ", " + componentName
+//      if (t == "string"
+//        || t == "CubedOS.Lib.Octet_Array"
+//        || t == "opaque") {
+//        newList += s", ${componentName}_Size"
+//      }
+//      newList
+//    })
+//    out.println(s"${commaSeparatedComponentList}, Decode_Status) => Message);")
     out.println("")
-    for (i <- m_i.indices) {
-      if (i == m_i.size - 1) {
-        doIndentation()
-        out.println("Post => " + m_i(i) + ";")
+
+    // Print the message invariants
+    for (i <- messageInvariants.indices) {
+      if (i == messageInvariants.size - 1) {
+        println("Post => " + messageInvariants(i) + ";")
       }
       else {
-        doIndentation()
-        out.println("Post => " + m_i(i) + ",")
+        println("Post => " + messageInvariants(i) + ",")
       }
     }
     indentationLevel -= 1
     out.println("")
-    null
+
   }
 
-  //Encode sending.
-  def doEncode(ctx: MXDRParser.Struct_bodyContext, id: String, m_i: List[String], arrowFlag: Int): Void = {
+  /**
+   * Write a message encoder subprogram.
+   * @param msgRep The message being encoded.
+   * @param messageInvariants Message component identifiers.
+   * @param direction
+   */
+  def printEncode(msgRep: MStructRep, messageInvariants: List[String], direction: MessageDirection.Value): Unit = {
+    val msgName = msgRep.typeName.get
+
     val encodeString = "_Encode"
-    var stringFlag = ""
-    var dataFlag = ""
-    doIndentation()
-    out.println("function " + id + encodeString)
+    println("procedure " + msgName + encodeString)
     indentationLevel += 1
-    doIndentation()
-    out.print("(")
-    if (arrowFlag == 0) {
-      out.println("Sender_Domain : Domain_ID_Type;")
-      doIndentation()
-      out.println("Sender  : Module_ID_Type;")
-      doIndentation()
-      out.println("Request_ID : Request_ID_Type;")
-    }
-    else if (arrowFlag == 1) {
-      out.println("Receiver_Domain : Domain_ID_Type;")
-      doIndentation()
-      out.println("Receiver  : Module_ID_Type;")
-      doIndentation()
-      out.println("Request_ID : Request_ID_Type;")
-    }
-    val structStuff = ctx.declaration().size()
-    for (i <- 0 until structStuff) {
-      if (ctx.declaration(i).children.contains(ctx.declaration(i).VOID)) {
-        doIndentation()
-        out.println("--TODO")
-      }
-      else {
-        doIndentation()
-        val t = ctx.declaration(i).children.get(0).getText
-        val id = ctx.declaration(i).IDENTIFIER.getText
-        if (t == "string") {
-          out.println(id + " : String;")
-          stringFlag = id
-        }
-        else if (t == "CubedOS.Lib.Octet_Array") {
-          out.println(id + " : " + ctx.declaration(i).type_specifier.getText + ";")
-          dataFlag = id
-        }
-        else if (t == "opaque") {
-          out.println(id + " : CubedOS.Lib.Octet_Array;")
-          dataFlag = id
-        }
-        else if (t == "int") {
-          out.println(id + " : Integer;")
-        }
-        else if (t == "unsignedhyper") {
-          out.println(id + " : Lib.U_Hyper_Type;")
-        }
-        else if (t == "unsignedint") {
-          out.println(id + " : Lib.Quadruple_Octet;")
-        }
-        else if (t == "double") {
-          out.println(id + " : Double;")
-        }
-        else if (t == "float") {
-          out.println(id + " : Float;")
-        }
-        else if (t == "hyper") {
-          out.println(id + " : Lib.Hyper_Type;")
-        }
-        else if (t == "bool") {
-          out.println(id + " : Boolean;")
-        }
-        else {
-          out.println(id + " : " + ctx.declaration(i).type_specifier.getText + ";")
-        }
-      }
-    }
-    doIndentation()
-    out.println("Priority : System.Priority := System.Default_Priority) return Message_Record")
+
+    val struct = new MessageStructRep(msgRep, direction, symbolTable)
+    // Parameters
+    val (stringFlag, dataFlag) = struct.printEncoderParams(indentationLevel, out)
+
+    // Aspects
     indentationLevel -= 1
-    doIndentation()
-    out.println("with")
+    println("with")
     indentationLevel += 1
-    doIndentation()
-    if (stringFlag != "") {
-      if (m_i.isEmpty) {
-        out.println("Global => null,")
-        doIndentation()
-        out.println("Pre => (0 < " + stringFlag + "'Length and " + stringFlag + "'Length <= XDR_Size_Type'Last - 12);")
-      }
-      else {
-        out.println("Global => null,")
-        doIndentation()
-        out.println("Pre => (0 < " + stringFlag + "'Length and " + stringFlag + "'Length <= XDR_Size_Type'Last - 12),")
-      }
+
+    var preConditions = List[String]()
+    if (stringFlag != "")
+      preConditions = preConditions :+ "(0 < " + stringFlag + "'Length and " + stringFlag + "'Length <= XDR_Size_Type'Last - 12)"
+    for (i <- messageInvariants.indices)
+        preConditions = preConditions :+ messageInvariants(i)
+    // Message is being sent to the right place
+    if (direction == MessageDirection.In) { // The receiving module id is known at compile time
+      preConditions = preConditions :+ s"Receiver_Address.Module_ID = This_Module"
+    } else if (direction == MessageDirection.Out) { // Sending module id is known at compile time
+      preConditions = preConditions :+ s"Sender_Address.Module_ID = This_Module"
     }
-    else {
-      if (m_i.isEmpty) {
-        out.println("Global => null;")
-      }
-      else {
-        out.println("Global => null,")
-        for (i <- m_i.indices) {
-          if (i == m_i.size - 1) {
-            doIndentation()
-            out.println("Pre => " + m_i(i) + ";")
-          }
-          else {
-            doIndentation()
-            out.println("Pre => " + m_i(i) + ",")
-          }
-        }
-      }
+
+    for (component <- msgRep.components) {
+//      if (component.typeRep.isInstanceOf[TimeSpanRep]) {
+//        preConditions = preConditions :+ s"Ada.Real_Time.\">=\"(Ada.Real_Time.Time_Span(${component.name}), Ada.Real_Time.Time_Span_Zero)"
+//        preConditions = preConditions :+ s"Ada.Real_Time.\"<=\"(Ada.Real_Time.Time_Span(${component.name}), XDR.Max_Time_Span)"
+//      } else if (component.typeRep.isInstanceOf[TimeRep]) {
+//        preConditions = preConditions :+ s"Ada.Real_Time.\">=\"(Ada.Real_Time.Time(${component.name}), Ada.Real_Time.Time_First)"
+//        preConditions = preConditions :+ s"Ada.Real_Time.\"<=\"(Ada.Real_Time.Time(${component.name}), XDR.Max_Time)"
+//      }
     }
+
+    if (preConditions.nonEmpty) {
+      println("Pre => true")
+      indentationLevel += 1
+      for (i <- preConditions.indices) {
+        if (i == preConditions.size - 1) {
+          println("and then " + preConditions(i) + ",")
+        } else
+          println("and then " + preConditions(i))
+      }
+      indentationLevel -= 1
+    }
+    //Post conditions
+    println(s"Post => CubedOS.Message_Types.Message_Type(Result) = ${msgName}_Msg")
+    indentationLevel += 1
+    println("and CubedOS.Message_Types.Sender_Address(Result) = Sender_Address")
+    println("and CubedOS.Message_Types.Receiver_Address(Result) = Receiver_Address")
+
+    println ("and Payload(Result) /= null;")
+    indentationLevel -= 1
+
     indentationLevel -= 1
     out.println("")
-    null
+  }
+
+  /**
+   * Prints specification for a type unsafe sender subprogram for the
+   * given message struct.
+   * @param msgRep The message to send.
+   * @param messageInvariants Preconditions specified by the user to include in the spec.
+   * @param direction Whether the module is sending or receiving this message.
+   * @param withStatus Whether to include a result status parameter in the spec.
+   */
+  def printUnsafeSend(msgRep: MStructRep, messageInvariants: List[String], direction: MessageDirection.Value, withStatus: Boolean): Unit = {
+    val msgName = msgRep.typeName.get
+    println("procedure Send_" + msgName)
+    indentationLevel += 1
+
+    val typeRep = symbolTable.getType[MStructRep](msgName)
+
+    val struct = new MessageStructRep(msgRep, direction, symbolTable)
+
+    // Parameters
+    val (stringFlag, dataFlag) = struct.printUnsafeSenderParams(indentationLevel, out, withStatus)
+
+    // Aspects
+    indentationLevel -= 1
+    println("with")
+    indentationLevel += 1
+
+    println("Global => (In_Out => Mailboxes),")
+
+    // There will be at least 1 precondition
+    var preConditions = List[String]()
+    if (stringFlag != "")
+      preConditions = preConditions :+ "(0 < " + stringFlag + "'Length and " + stringFlag + "'Length <= XDR_Size_Type'Last - 12)"
+    for (i <- messageInvariants.indices)
+      preConditions = preConditions :+ messageInvariants(i)
+    // Message is being sent to the right place
+    if (direction == MessageDirection.In) { // The receiving module id is known at compile time
+      preConditions = preConditions :+ s"Receiver_Address.Module_ID = This_Module"
+    } else if (direction == MessageDirection.Out) { // Sending module id is known at compile time
+      preConditions = preConditions :+ s"Module_ID(Sender) = This_Module"
+    }
+    if (withStatus) {
+      preConditions = preConditions :+ s"Receiver_Address.Domain_ID = Domain_ID"
+    }
+
+
+    println("Pre => Messaging_Ready")
+    indentationLevel += 1
+    for (i <- preConditions.indices) {
+      println("and then " + preConditions(i))
+    }
+    indentationLevel -= 1
+
+    println(";")
+
+    indentationLevel -= 1
+    out.println("")
+  }
+
+  /**
+   * Prints a message send subprogram specification for the given message.
+   * @param msgRep The message being sent.
+   * @param messageInvariants Preconditions to put in the spec.
+   * @param direction Whether the message is sent or received by the module.
+   * @param withStatus If the produced subprogram should have a result status parameter.
+   */
+  def printSafeSend(msgRep: MStructRep, messageInvariants: List[String], direction: MessageDirection.Value, withStatus: Boolean): Unit = {
+    val msgName = msgRep.typeName.get
+    println("procedure Send_" + msgName)
+    indentationLevel += 1
+    val typeRep = symbolTable.getType[MStructRep](msgName)
+    val struct = new MessageStructRep(msgRep, direction, symbolTable)
+
+    // Parameters
+    val (stringFlag, dataFlag) = struct.printSafeSenderParams(indentationLevel, out, withStatus)
+
+    // Aspects
+    indentationLevel -= 1
+    println("with")
+    indentationLevel += 1
+
+    println("Global => (In_Out => Mailboxes),")
+
+    // There will be at least 1 precondition
+    var preConditions = List[String]()
+    if (stringFlag != "")
+      preConditions = preConditions :+ "(0 < " + stringFlag + "'Length and " + stringFlag + "'Length <= XDR_Size_Type'Last - 12)"
+    for (i <- messageInvariants.indices)
+      preConditions = preConditions :+ messageInvariants(i)
+    // Message is being sent to the right place
+    if (direction == MessageDirection.In) { // The receiving module id is known at compile time
+      preConditions = preConditions :+ s"Receiving_Module.Module_ID = This_Module"
+    } else if (direction == MessageDirection.Out) { // Sending module id is known at compile time
+      preConditions = preConditions :+ s"Module_ID(Sender) = This_Module"
+    }
+
+    // Destination safety checks
+    preConditions = preConditions :+ s"Receives(Receiving_Module, ${msgName}_Msg)"
+    preConditions = preConditions :+ (if (withStatus) "Has_Module(This_Domain, Receiving_Module.Module_ID)"
+      else "Has_Module(Receiving_Domain, Receiving_Module.Module_ID)")
+
+    println("Pre => Messaging_Ready")
+    indentationLevel += 1
+    for (i <- preConditions.indices) {
+      println("and then " + preConditions(i))
+    }
+    indentationLevel -= 1
+
+    println(";")
+
+    indentationLevel -= 1
+    out.println("")
   }
 
   //Check sending.
-  def doCheck(id: String, arrowFlag: Int): Void = {
+  def doCheck(msgRep: MStructRep): Unit ={
     val checkString = "Is_"
-    doIndentation()
-    out.println("function " + checkString + id + "(Message : Message_Record) return Boolean is")
+    println("function " + checkString + msgRep.typeName.get + "(Message : Message_Record) return Boolean is")
     indentationLevel += 1
+    println(s"(CubedOS.Message_Types.Message_Type(Message) = ${msgRep.typeName.get}_Msg);")
+    indentationLevel -= 1
+
+  }
+
+  /**
+   * Prints the components of a struct.
+   * type Struct_Type is
+   *  record
+   *    ... <- This stuff
+   *  end record;
+   * @param components The struct's components.
+   * @return
+   */
+  private def printStructComponents(components: List[StructComponent]): Unit ={
+    indentationLevel += 1
+    for(component <- components) {
+      val componentName = component.name
+      val typeRep = component.typeRep
+
+      assert(!(component.typeRep.isInstanceOf[ArrayRep] && component.typeRep.isAnonymous),
+        "Anonymous arrays should have been removed in pre-processing.")
+
+      if (passedByReference(typeRep))
+        println(s"$componentName : ${typeRep.typeName.getOrElse(adaFriendlyTypeName(typeRep))}_Ptr;")
+      else {
+        typeRep match {
+          case o: FixedOpaqueRep =>
+            println(s"$componentName : ${typeRep.typeName.getOrElse(adaFriendlyTypeName(typeRep))}(1..${o.bytes.value});")
+          case _ =>
+            println(s"$componentName : ${typeRep.typeName.getOrElse(adaFriendlyTypeName(typeRep))};")
+        }
+      }
+    }
+
+    indentationLevel -= 1
+  }
+
+  /**
+   *
+   * @param constRep Must be named.
+   */
+  private def printConstantDef(constRep: ConstRep[Rep]): Unit ={
     doIndentation()
-    if (arrowFlag == 0) {
-      out.print("(Message.Receiver")
+    out.print(s"${constRep.name.get} : constant ")
+
+    if (constRep.typeName.nonEmpty) {
+      out.print(constRep.typeName.get)
+    } else if (constRep.typeRep.nonEmpty) {
+      out.print(constRep.typeRep.get.baseTypeName.getOrElse(adaFriendlyTypeName(constRep.typeRep.get)))
+    } else {
+      val constTypeName = inferTypeOfConst(constRep)
+      out.print(constTypeName)
     }
-    else if (arrowFlag == 1) {
-      out.print("(Message.Sender")
+
+    out.println(s" := ${constRep.value};")
+    println()
+
+
+//    doIndentation()
+//    val value = ctx.CONSTANT.getText
+//    if (ctx.getChildCount == 5) {
+//      val id = ctx.IDENTIFIER(0).getText
+//      out.println(id + ": constant := " + value + ";" + "\n")
+//    }
+//    else if (ctx.getChildCount == 7) {
+//      val id = ctx.IDENTIFIER(0).getText
+//      out.println(id + ": constant " + ctx.IDENTIFIER(1).getText + " := " + value + ";" + "\n")
+//    }
+
+  }
+
+  /**
+   * Determines the type of the constant.
+   * Will recursively search through const references
+   * or determine the type of a literal.
+   * @param value The constant.
+   * @return
+   */
+  private def inferTypeOfConst(value: ConstRep[Rep]): String = {
+    if (value.typeRep.nonEmpty) return value.typeRep.get.baseTypeName.getOrElse(adaFriendlyTypeName(value.typeRep.get))
+
+    if (value.isSymbolic) {
+      return inferTypeOfConst(symbolTable.getConstant[Rep](value.value))
     }
-    out.println(" = ID and Message.Message_ID = Message_Type'Pos(" + id + "));")
+
+    // Assume that all constants are numeric
+    val numericVal = resolveValue(value.value, symbolTable)
+    if (numericVal.toString.contains('.'))
+      "Float"
+    else "Integer"
+  }
+
+  /**
+   * Dispatches basic type definitions.
+   */
+  private def disbatchBasicTypeDef(name: String, typeRep: Rep): Unit = {
+    val isRanged = typeRep.isInstanceOf[Ranged] && typeRep.asInstanceOf[Ranged].isExplicit
+    val isSubtype = typeRep.isSubtype
+
+    doIndentation()
+    if (isSubtype) {
+      out.print(s"subtype $name is ${typeRep.baseTypeName.get}")
+    } else {
+      out.print(s"type $name is")
+      if (!isRanged) out.print(s" new ${adaFriendlyTypeName(typeRep)}")
+      else if (isRanged && typeRep.isInstanceOf[ContinuousRep]) out.print(" new Float")
+    }
+
+    if (isRanged) {
+      val rangedRep = typeRep.asInstanceOf[TypeRep.Ranged]
+      out.print(s" range (${rangedRep.range.lowerBound.value}) .. (${rangedRep.range.upperBound.value})")
+    }
+
+    out.println(";")
+    println()
+  }
+
+  private def printEnumDef(name: String, typeRep: EnumRep): Unit ={
+    doIndentation()
+    out.print("type " + name + " is (")
+
+    // A valid enum must have one or more values
+    printEnumValues(typeRep.values)
+    out.print(")")
+//    indentationLevel += 1
+//    visitEnum_body(ctx.enum_body)
+//    indentationLevel -= 1
+    out.println(";")
     out.println("")
-    indentationLevel -= 1
-    null
   }
 
-  def visitStruct_body(ctx: Struct_bodyContext, id: String): Void = {
+
+  private def printEnumValues(components: List[EnumValue]): Unit = {
+    if (components.isEmpty) return
+
+    val values = components.map(x => (x.name, x.value))
+
+    // Assume either all components have values, or none do
+
+    out.print(values.head._1)
+    if (values.head._2.nonEmpty)
+      out.print(" = " + values.head._2.get)
+
+    for (i <- 1 until values.length) {
+      out.print(s", ${values(i)._1}")
+      if (values(i)._2.nonEmpty)
+        out.print(s" = ${values(i)._2.get}")
+    }
+  }
+
+
+  private def printStructDef(name: String, structRep: StructRep): Unit ={
+    println("type " + name + " is ")
     indentationLevel += 1
-    for (i <- 0 until ctx.declaration.size()) {
-      doIndentation()
-      out.print(ctx.declaration(i).IDENTIFIER.getText)
-      out.print(" : ")
-      symbolTable.getST(id, ctx.declaration(i).IDENTIFIER.getText) match {
-        case "UIntRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.INT)) {
-          out.print("Lib.Quadruple_Octet")
-        }
-        else {
-          out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
-        }
-        case "IntRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.INT)) {
-          out.print("Integer")
-        }
-        else {
-          out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
-        }
-        case "FloatRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.FLOAT)) {
-          out.print("Float")
-        }
-        else {
-          out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
-        }
-        case "DoubleRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.DOUBLE)) {
-          out.print("Double")
-        }
-        else {
-          out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
-        }
-        case "UHyperRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.HYPER)) {
-          out.print("Lib.U_Hyper_Type")
-        }
-        else {
-          out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
-        }
-        case "HyperRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.HYPER)) {
-          out.print("Lib.Hyper_Type")
-        }
-        else {
-          out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
-        }
-        case "BoolRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.BOOL)) {
-          out.print("Boolean")
-        }
-        else {
-          out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
-        }
-        case "StringRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.STRING)) {
-          out.print("String")
-        }
-        else {
-          out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
-        }
-        case "TimeSpanRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.TIME_SPAN)) {
-          out.print("Ada.Real_Time.Time_Span")
-        }
-        else {
-          out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
-        }
-        case "TimeRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.TIME)) {
-          out.print("Ada.Real_Time.Time")
-        }
-        else {
-          out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
-        }
-        case "DataRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.DATA)) {
-          out.print("CubedOS.Lib.Octet_Array")
-        }
-        else {
-          out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
-        }
-        case "EnumRep" =>
-          val y = ctx.declaration(i).IDENTIFIER.getText
-          out.print(symbolTable.getStructuredTypeParent(id, y))
-        case "StructRep" =>
-          val y = ctx.declaration(i).IDENTIFIER.getText
-          out.print(symbolTable.getStructuredTypeParent(id, y))
-        case "ArrayRep" =>
-          val y = ctx.declaration(i).IDENTIFIER.getText
-          symbolTable.getArraySType(id, y) match {
-            case "UIntRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.INT)) {
-              out.print("Lib.Quadruple_Octet")
-            }
-            else {
-              out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
-            }
-            case "IntRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.INT)) {
-              out.print("Integer")
-            }
-            else {
-              out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
-            }
-            case "FloatRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.FLOAT)) {
-              out.print("Float")
-            }
-            else {
-              out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
-            }
-            case "DoubleRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.DOUBLE)) {
-              out.print("Double")
-            }
-            else {
-              out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
-            }
-            case "UHyperRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.HYPER)) {
-              out.print("Lib.U_Hyper_Type")
-            }
-            else {
-              out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
-            }
-            case "HyperRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.HYPER)) {
-              out.print("Lib.Hyper_Type")
-            }
-            else {
-              out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
-            }
-            case "BoolRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.BOOL)) {
-              out.print("Boolean")
-            }
-            else {
-              out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
-            }
-            case "StringRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.STRING)) {
-              out.print("String")
-            }
-            else {
-              out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
-            }
-            case "TimeSpanRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.TIME_SPAN)) {
-              out.print("Ada.Real_Time.Time_Span")
-            }
-            else {
-              out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
-            }
-            case "TimeRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.TIME)) {
-              out.print("Ada.Real_Time.Time")
-            }
-            else {
-              out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
-            }
-            case "DataRep" => if (ctx.declaration(i).type_specifier.children.contains(ctx.declaration(i).type_specifier.DATA)) {
-              out.print("CubedOS.Lib.Octet_Array")
-            }
-            else {
-              out.print(symbolTable.getStructuredTypeParent(id, ctx.declaration(i).IDENTIFIER.getText))
-            }
-            case "EnumRep" =>
-              val y = ctx.declaration(i).IDENTIFIER.getText
-              out.print(symbolTable.getStructuredTypeParent(id, y))
-            case "StructRep" =>
-              val y = ctx.declaration(i).IDENTIFIER.getText
-              out.print(symbolTable.getStructuredTypeParent(id, y))
-            case _ =>
-              out.print(ctx.declaration(i).type_specifier.getText)
-          }
-        case _ =>
-          out.print(ctx.declaration(i).type_specifier.getText)
-      }
-      out.println(";")
-    }
+    println("record")
+    printStructComponents(structRep.components)
+    println("end record;")
     indentationLevel -= 1
-    null
+    out.println("")
   }
 
-  override def visitConstant_def(ctx: Constant_defContext): Void = {
+  /**
+   * Prints the specifications for the given message struct type.
+   * Includes the encode, decoder, send and check subprograms.
+   * @param msgName The name of the message struct.
+   * @param msgRep
+   */
+  private def printMessageSpecs(msgName: String, msgRep: MStructRep): Unit = {
+    val direction = msgRep.direction
+    val messageInvariants = msgRep.invariants
+
+//    if (msgRep.isVoid && msgRep.components.components.size > 1) {
+//      System.out.println("Can't have multiple message struct")
+//      System.out.println("parameters included with void.")
+//      return
+//    }
+
+    printEncode(msgRep, messageInvariants, direction)
+    printUnsafeSend(msgRep, messageInvariants, direction, withStatus = false)
+    printUnsafeSend(msgRep, messageInvariants, direction, withStatus = true)
+    printSafeSend(msgRep, messageInvariants, direction, withStatus = false)
+    printSafeSend(msgRep, messageInvariants, direction, withStatus = true)
+    doCheck(msgRep)
+    if (!msgRep.isVoid)
+      printDecode(msgRep, messageInvariants, direction)
+  }
+
+  /**
+   * Prints the given content with the correct indentation and
+   * a newline at the end.
+   * @param content The string to print, doesn't include the newline.
+   */
+  private def println(content: String = ""): Unit = {
     doIndentation()
-    val value = ctx.CONSTANT.getText
-    if (ctx.getChildCount == 5) {
-      val id = ctx.IDENTIFIER(0).getText
-      out.println(id + ": constant := " + value + ";" + "\n")
-    }
-    else if (ctx.getChildCount == 7) {
-      val id = ctx.IDENTIFIER(0).getText
-      out.println(id + ": constant " + ctx.IDENTIFIER(1).getText + " := " + value + ";" + "\n")
-    }
-    null
-  }
-
-  override def visitType_def(ctx: MXDRParser.Type_defContext): Void = {
-    val typeOfTypeDef = ctx.getChild(0).getText
-    typeOfTypeDef match {
-      case "typedef" =>
-        doIndentation()
-        if (!ctx.children.contains(ctx.subtype_spec)) {
-          visitDeclaration(ctx.declaration)
-          if (ctx.children.contains(ctx.RANGE)) {
-            val t = ctx.declaration().IDENTIFIER.getText
-            if (symbolTable.getTypeRepresentation(t).equals(TypeRep.FloatRep)) {
-              visitRange_constraint(ctx.range_constraint, 1)
-            }
-            else {
-              visitRange_constraint(ctx.range_constraint, 0)
-            }
-          }
-        }
-        else {
-          out.print("subtype " + ctx.declaration.IDENTIFIER.getText + " is ")
-          if (ctx.range_constraint.children.contains(ctx.range_constraint.IDENTIFIER)) {
-            if (ctx.range_constraint.IDENTIFIER.getText.contains('\'')) {
-              out.print(ctx.range_constraint.IDENTIFIER.
-                getText.substring(0, ctx.range_constraint.IDENTIFIER.
-                getText.indexOf('\'')))
-            }
-            else {
-              out.print("Natural")
-            }
-          }
-          else {
-            out.print(ctx.subtype_spec.IDENTIFIER)
-          }
-          val t = ctx.declaration.IDENTIFIER.getText
-          if (symbolTable.getTypeRepresentation(t).equals(TypeRep.FloatRep)) {
-            visitRange_constraint(ctx.range_constraint, 1)
-          }
-          else {
-            visitRange_constraint(ctx.range_constraint, 0)
-          }
-        }
-        out.println(";")
-        out.println("")
-
-      case "enum"
-      =>
-        doIndentation()
-        out.println("type " + ctx.IDENTIFIER.getText + " is ")
-        indentationLevel += 1
-        visitEnum_body(ctx.enum_body)
-        indentationLevel -= 1
-        out.println(";")
-        out.println("")
-
-      case "struct"
-      =>
-        val id = ctx.IDENTIFIER.getText
-        doIndentation()
-        out.println("type " + id + " is ")
-        indentationLevel += 1
-        doIndentation()
-        out.println("record")
-        visitStruct_body(ctx.struct_body, id)
-        doIndentation()
-        out.println("end record;")
-        indentationLevel -= 1
-        out.println("")
-
-      case "union"
-      =>
-        val unionNode = ctx.UNION
-        reporter.reportError(
-          unionNode.getSymbol.getLine,
-          unionNode.getSymbol.getCharPositionInLine + 1,
-          "Union definitions not yet implemented")
-
-      case "message"
-      =>
-        val n = ctx.IDENTIFIER.getText
-        var m_i = List[String]()
-        if (ctx.children.contains(ctx.condition)) {
-          for (i <- 0 until ctx.condition.expression.size()) {
-            if (ctx.condition.expression(i).children.contains(ctx.condition.expression(i).GOE)) {
-              m_i = (ctx.condition.expression(i).IDENTIFIER(0).getText + " " +
-                ctx.condition.expression(i).GOE.getText + " " +
-                ctx.condition.expression(i).IDENTIFIER(1).getText) :: m_i
-            }
-            else if (ctx.condition.expression(i).children.contains(ctx.condition.expression(i).LOE)) {
-              m_i = (ctx.condition.expression(i).IDENTIFIER(0).getText + " " +
-                ctx.condition.expression(i).LOE.getText + " " +
-                ctx.condition.expression(i).IDENTIFIER(1).getText) :: m_i
-            }
-            else if (ctx.condition.expression(i).children.contains(ctx.condition.expression(i).RANGLE)) {
-              m_i = (ctx.condition.expression(i).IDENTIFIER(0).getText + " " +
-                ctx.condition.expression(i).RANGLE.getText + " " +
-                ctx.condition.expression(i).IDENTIFIER(1).getText) :: m_i
-            }
-            else if (ctx.condition.expression(i).children.contains(ctx.condition.expression(i).LANGLE)) {
-              m_i = (ctx.condition.expression(i).IDENTIFIER(0).getText + " " +
-                ctx.condition.expression(i).LANGLE.getText + " " +
-                ctx.condition.expression(i).IDENTIFIER(1).getText) :: m_i
-            }
-            else if (ctx.condition.expression(i).children.contains(ctx.condition.expression(i).EQUALS)) {
-              m_i = (ctx.condition.expression(i).IDENTIFIER(0).getText + " " +
-                ctx.condition.expression(i).EQUALS.getText + " " +
-                ctx.condition.expression(i).IDENTIFIER(1).getText) :: m_i
-            }
-          }
-        }
-        var voidFlag = 0
-        for (i <- 0 until ctx.struct_body.declaration.size()) {
-          if (ctx.struct_body.declaration(i).getText == "void") {
-            voidFlag = 1
-          }
-        }
-        if (voidFlag == 1 && ctx.struct_body.declaration.size() > 1) {
-          println("Can't have multiple message struct")
-          println("parameters included with void.")
-        }
-        else if (voidFlag == 1 && ctx.struct_body.declaration.size() == 1) {
-          var arrowFlag = 0
-          if (ctx.children.contains(ctx.LARROW)) {
-            arrowFlag = 1
-          }
-          doEncode(ctx.struct_body(), n, m_i, arrowFlag)
-          doCheck(n, arrowFlag)
-          out.println("")
-        }
-        else {
-          var arrowFlag = 0
-          if (ctx.children.contains(ctx.LARROW)) {
-            arrowFlag = 1
-          }
-          doEncode(ctx.struct_body, n, m_i, arrowFlag)
-          doCheck(n, arrowFlag)
-          doDecode(ctx.struct_body, n, m_i, arrowFlag)
-          out.println("")
-        }
-      case _ =>
-    }
-    null
-  }
-
-  def visitRange_constraint(ctx: MXDRParser.Range_constraintContext, floatFlag: Int): Void
-
-  = {
-    var lowerBound = ctx.getChild(0).getText
-    var upperBound = ctx.getChild(2).getText
-    if (ctx.children.contains(ctx.IDENTIFIER)) {
-      if (ctx.IDENTIFIER.getText.contains("'")) {
-        val n = ctx.IDENTIFIER.getText.indexOf("'")
-        if (symbolTable.getTypeNames.exists(_ == ctx.IDENTIFIER.getText.substring(0, n))) {
-          val t = symbolTable.getTypeRepresentation(ctx.IDENTIFIER.getText.substring(0, n))
-          if (t.equals(TypeRep.UIntRep)) {
-            var f = ctx.IDENTIFIER.getText
-            while (f.contains("'")) {
-              val num = f.indexOf("'")
-              if (symbolTable.getTypeNames.exists(_ == f.substring(0, num))) {
-                f = symbolTable.getTypeValue(f.substring(0, num))
-                f = f.substring(f.lastIndexOf(" ") + 1, f.length)
-              }
-            }
-            out.print(" range " + lowerBound + " .. " + f)
-          }
-          else if (t.equals(TypeRep.IntRep)) {
-            var f = ctx.IDENTIFIER.getText
-            while (f.contains("'")) {
-              val num = f.indexOf("'")
-              if (symbolTable.getTypeNames.exists(_ == f.substring(0, num))) {
-                f = symbolTable.getTypeValue(f.substring(0, num))
-                f = f.substring(f.lastIndexOf(" ") + 1, f.length)
-              }
-            }
-            out.print(" range " + lowerBound + " .. " + f)
-          }
-          else if (t.toString.contains("ConstRep")) {
-            var f = symbolTable.getTypeValue(ctx.IDENTIFIER.getText)
-            f = f.substring(f.lastIndexOf(" ") + 1, f.length)
-            out.print(" range " + lowerBound + " .. " + f)
-          }
-          else if (t.equals(TypeRep.FloatRep)) {
-            var f = ctx.IDENTIFIER.getText
-            while (f.contains("'")) {
-              val num = f.indexOf("'")
-              if (symbolTable.getTypeNames.exists(_ == f.substring(0, num))) {
-                f = symbolTable.getTypeValue(f.substring(0, num))
-                f = f.substring(f.lastIndexOf(" ") + 1, f.length)
-              }
-            }
-            if (!lowerBound.contains(".")){
-              lowerBound = lowerBound + ".0"
-            }
-            if (!f.contains(".")){
-              f = f + ".0"
-            }
-            out.print(" range " + lowerBound + " .. " + f)
-          }
-          else {
-            reporter.reportError(
-              ctx.IDENTIFIER.getSymbol.getLine,
-              ctx.IDENTIFIER.getSymbol.getCharPositionInLine + 1,
-              upperBound.substring(0, n) + " hasn't been declared yet.")
-          }
-        }
-      }
-      else {
-        if (upperBound.toLowerCase == "natural") {
-          out.print(" range " + lowerBound + " .. 4294967295")
-        }
-        else if (symbolTable.getTypeNames.exists(_ == ctx.IDENTIFIER.getText)) {
-          val t = symbolTable.getTypeRepresentation(ctx.IDENTIFIER.getText)
-          if (t.equals(TypeRep.UIntRep)) {
-            var f = symbolTable.getTypeValue(ctx.IDENTIFIER.getText)
-            f = f.substring(f.lastIndexOf(" ") + 1, f.length)
-            out.print(" range " + lowerBound + " .. " + f)
-          }
-          else if (t.equals(TypeRep.IntRep)) {
-            var f = symbolTable.getTypeValue(ctx.IDENTIFIER.getText)
-            f = f.substring(f.lastIndexOf(" ") + 1, f.length)
-            out.print(" range " + lowerBound + " .. " + f)
-          }
-          else if (t.toString.contains("ConstRep")) {
-            var f = symbolTable.getTypeValue(ctx.IDENTIFIER.getText)
-            f = f.substring(f.lastIndexOf(" ") + 1, f.length)
-            out.print(" range " + lowerBound + " .. " + f)
-          }
-          else if (t.equals(TypeRep.FloatRep)) {
-            var f = symbolTable.getTypeValue(ctx.IDENTIFIER.getText)
-            f = f.substring(f.lastIndexOf(" ") + 1, f.length)
-            if (!lowerBound.contains(".")){
-              lowerBound = lowerBound + ".0"
-            }
-            if (!f.contains(".")){
-              f = f + ".0"
-            }
-            out.print(" range " + lowerBound + " .. " + f)
-          }
-          else {
-            reporter.reportError(
-              ctx.IDENTIFIER.getSymbol.getLine,
-              ctx.IDENTIFIER.getSymbol.getCharPositionInLine + 1,
-              upperBound + " hasn't been declared yet.")
-          }
-        }
-      }
-    }
-    else {
-      if (floatFlag == 1) {
-        if (!lowerBound.contains(".")){
-          lowerBound = lowerBound + ".0"
-        }
-        if (!upperBound.contains(".")){
-          upperBound = upperBound + ".0"
-        }
-        out.print(" range " + lowerBound + " .. " + upperBound)
-      }
-      else {
-        out.print(" range " + lowerBound + " .. " + upperBound)
-      }
-    }
-    null
+    out.println(content)
   }
 }

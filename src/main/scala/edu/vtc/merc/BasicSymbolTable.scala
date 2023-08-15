@@ -1,258 +1,226 @@
 package edu.vtc.merc
 
-import edu.vtc.merc.SymbolTable.*
-import edu.vtc.merc.TypeRep.ComponentRep
+import edu.vtc.merc.SymbolTable.{DuplicateObjectNameException, DuplicateTypeNameException, UnknownObjectNameException, UnknownTypeNameException}
+import edu.vtc.merc.TypeRep.{ArrayRep, StructComponent, ConstRep, FixedArrayRep, MStructRep, MXDREntity, Rep, StructRep, StructuredRep}
+
+import scala.collection.mutable
 
 /**
  * A simple implementation of the SymbolTable trait that stores symbols in in-memory maps.
  */
 class BasicSymbolTable extends SymbolTable {
 
-  private var structuredTypeMap = Map[String, (TypeRep.Rep, String)]()
-  private var sTypes = Map[String, ComponentRep]()
-  private var typeMap = Map[String, (TypeRep.Rep, String)]()
+  /**
+   * Maps symbols to types.
+   */
+  private val types = mutable.HashMap[String, Rep]()
 
+  /**
+   * Maps symbols to constants.
+   */
+  private val constants = mutable.HashMap[String, ConstRep[Rep]]()
 
-  // Adds new structured type.
-  def addStructuredName(name: String, typeRep: TypeRep.Rep, value: String): Unit = {
-    // TODO: Include in the message the position of the error in the source text.
-    if (structuredTypeMap.contains(name))
-      throw new DuplicateObjectNameException(s"$name already names an object")
+  /**
+   * Stores all the symbols in the table in the order they were added.
+   */
+  private val order = mutable.ListBuffer[String]()
 
-    structuredTypeMap = structuredTypeMap + (name -> ((typeRep, value)))
+  /**
+   * Adds the given type to the table.
+   * @param symbol The name of the type.
+   * @param rep The type representation.
+   * @throws DuplicateTypeNameException If table already contains a type
+   *                                    with the given name.
+   */
+  def addType(symbol: String, rep: Rep): Unit = {
+    if (types.contains(symbol))
+      throw new DuplicateTypeNameException(symbol + " type has already been defined.")
+    types(symbol) = rep
+    order.addOne(symbol)
   }
 
-
-  // Adds message struct parameters.
-  def addSTypes(name: String, p: ComponentRep): Unit = {
-    sTypes = sTypes + (name -> p)
+  /**
+   * Adds a constant to the symbol table.
+   * @param symbol The key for the constant.
+   * @param rep The constant stored at the key. Must be named.
+   * @throws DuplicateObjectNameException If table already contains a constant with
+   *                                      the given symbol.
+   */
+  def addConstant(symbol: String, rep: ConstRep[Rep]): Unit = {
+    if (constants.contains(symbol)) {
+      throw new DuplicateObjectNameException(symbol + " is already a defined constant.")
+    }
+    assert(rep.name.get == symbol)
+    constants(symbol) = rep
+    order.addOne(symbol)
   }
 
-
-  // Adds new unstructured type.
-  def addTypeName(name: String, typeRep: TypeRep.Rep, value: String): Unit = {
-    // TODO: Include in the message the position of the error in the source text.
-    if (typeMap.contains(name))
-      throw new DuplicateTypeNameException(s"$name already names a type")
-
-    typeMap = typeMap + (name -> ((typeRep, value)))
+  /**
+   * Adds either a type or a constant.
+   * @param symbol
+   * @param entity
+   */
+  def addEntity(symbol: String, entity: MXDREntity): Unit = {
+    entity match {
+      case x: ConstRep[Rep] =>
+        addConstant(symbol, x)
+      case x: Rep =>
+        addType(symbol, x)
+    }
   }
 
-
-  // Returns iterable of all structured type names.
-  def getStructuredTypeNames: Iterable[String] = {
-    structuredTypeMap.keys
+  /**
+   * Iterates through all the symbols in the table in the order
+   * they were added, with their definition.
+   *
+   * All constants will have names.
+   * @return
+   */
+  def getAll(): Iterator[(String, MXDREntity)] = {
+    return order.map(symbol => (symbol, types.getOrElse(symbol, constants(symbol)))).iterator
   }
 
-
-  // Returns iterable of variable names in a message struct.
-  def getSType(name: String): Iterable[String] = {
-    sTypes(name).components.map(x => x._1)
+  /**
+   * Returns iterable of variable names for the components
+   * the given struct.
+   * @param name The name of the struct.
+   * @return Iterable of component variable names.
+   */
+  override def getStructComponentNames(name: String): Iterable[String] = {
+    getType[StructRep](name).components.map(r => r.name)
   }
 
+  /**
+   * Gets the type of a component in a structure.
+   * This is different than the type, which can be user defined,
+   * like Write_Size_Type is a user defined type.
+   * This function returns the underlying type, of which there are
+   * a predefined finite set. The underlying type of this example
+   * might be UInt.
+   * @param structName Name of a message struct.
+   * @param componentName Name of component in the given message struct.
+   * @return The underlying type name for the specified message component,
+   *         or "" if the type id unknown.
+   */
+  def getStructComponentTypeName(structName: String, componentName: String): String = {
+    val rep = getType[StructRep](structName).getComponent(componentName).typeRep
+    var v = rep.toString
 
-  // Returns the type of a supplied variable name in a message struct.
-  def getST(name: String, subName: String): String = {
-    val c = sTypes(name).components.filter(_._1 == subName).map(x => x._2)
-    var v = ""
-    if (c.nonEmpty) {
-      v = c.head.toString
+    if (v.contains("(")) {
+      if (v.substring(0, v.indexOf("(")).contentEquals("IDRep")) {
+        v = v.substring(v.indexOf("(") + 1)
+      }
       if (v.contains("(")) {
-        if (v.substring(0, v.indexOf("(")).contentEquals("IDRep")) {
-          v = v.substring(v.indexOf("(") + 1)
-        }
-        if (v.contains("(")) {
-          v = v.substring(0, v.indexOf("("))
-        }
-        if (v.contains(")")) {
-          v = v.substring(0, v.indexOf(")"))
-        }
+        v = v.substring(0, v.indexOf("("))
+      }
+      if (v.contains(")")) {
+        v = v.substring(0, v.indexOf(")"))
       }
     }
+
     v
   }
 
+  /**
+   * Gets the underlying type of a component in a structure.
+   * This is different than the type, which can be user defined,
+   * like Write_Size_Type is a user defined type.
+   * This function returns the underlying type, of which there are
+   * a predefined finite set. The underlying type of this example
+   * might be UInt.
+   *
+   * @param structName    Name of a message struct.
+   * @param componentName Name of component in the given message struct.
+   * @return The underlying type rep for the specified message component.
+   */
+  def getStructComponentTypeRep(structName: String, componentName: String): TypeRep.Rep = {
+    getType[StructRep](structName).getComponent(componentName).typeRep
+  }
 
-  // Returns the structured type variable name of a given variable within a message struct.
-  def getStructuredTypeParent(name: String, subName: String): String = {
-    var d = ""
-    val c = sTypes(name).components.filter(_._1 == subName).map(x => x._3)
-    if (c.nonEmpty) {
-      d = c.head.toString
+
+  /**
+   * Gets the default value of a component of a struct.
+   * @param structName The name of the struct in the table.
+   * @param componentName The name of the component.
+   * @return The default value, or "" if the component couldn't be found in the given struct,
+   *         or "null" if the no default value was specified for the component.
+   */
+  override def getComponentDefaultValue(structName: String, componentName: String): String = {
+    val struct = getType[StructRep](structName)
+
+    struct.getComponent(componentName).value.getOrElse("")
+  }
+
+
+  /**
+   * @return Iterable for all the unstructured type names
+   */
+  override def getTypeNames: Iterable[String] = {
+    types.filter(rep => !rep.isInstanceOf[StructuredRep]).keys
+  }
+
+  /**
+   * Gets the type referred to by a symbol.
+   * @param symbol The name representing the type.
+   * @tparam T The type of type. If you don't know, just use Rep.
+   * @return
+   * @throws UnknownObjectNameException If the symbol isn't in the table
+   *                                    with the correct type.
+   */
+  def getType[T <: Rep](symbol: String): T = {
+    val result = types(symbol)
+
+    if (!result.isInstanceOf[T])
+      throw new UnknownObjectNameException(s"$symbol is not the name of an object")
+
+    result.asInstanceOf[T]
+  }
+
+  /**
+   * Gets the constant referred to by the given symbol.
+   * @param symbol The name of the constant.
+   * @param T The type of the constant. If unknown, just use Rep.
+   *          If you know it's some type of number, use NumericRep.
+   * @return The found constant.
+   */
+  def getConstant[T <: Rep](symbol: String): ConstRep[T] = {
+    if (!constants.contains(symbol)) {
+      throw new UnknownObjectNameException(s"Symbol $symbol is not a known constant.")
     }
-    d
+
+    val result = constants(symbol)
+
+    if (!result.isInstanceOf[ConstRep[T]])
+      throw new UnknownObjectNameException(s"Symbol $symbol does not refer to a constant of the requested type")
+
+    result.asInstanceOf[ConstRep[T]]
   }
 
 
-  // Returns iterable of unstructured type variable names.
-  def getTypeNames: Iterable[String] = {
-    typeMap.keys
+  /**
+   * Returns the size of the array in the struct.
+   * (Upper bound)
+   * @param structName The name of the struct.
+   * @param componentName The name of an fixed-array component.
+   * @return
+   */
+  def getArraySSize(structName: String, componentName: String): String = {
+    getType[StructRep](structName).getComponent(componentName).typeRep.asInstanceOf[FixedArrayRep].size.value
   }
 
-
-  // Returns the type of a structured type.
-  def getStructuredType(name: String): TypeRep.Rep = {
-    // TODO: Include in the message the position of the error in the source text.
-    if (!structuredTypeMap.contains(name))
-      throw new UnknownObjectNameException(s"$name is not the name of an object")
-
-    structuredTypeMap(name)._1
-  }
-
-
-  // Returns the type of an unstructured variable.
-  def getTypeRepresentation(name: String): TypeRep.Rep = {
-    // TODO: Include in the message the position of the error in the source text.
-    if (!typeMap.contains(name))
-      return TypeRep.NoTypeRep
-    else
-      typeMap(name)._1
-  }
-
-
-  // Returns the stored value of a given unstructured type.
-  def getTypeValue(name: String): String = {
-    if (!typeMap.contains(name))
-      throw new UnknownObjectNameException(s"$name is not the name of an object")
-
-    typeMap(name)._2
-  }
-
-
-  // Returns Array inner type.
-  def getArrayType(name: String): TypeRep.Rep = {
-    if (!typeMap.contains(name)) {
-      throw new UnknownObjectNameException(s"$name is not the name of an object")
-    }
-    else {
-      val c1 = typeMap(name)._1.toString.lastIndexOf("(") + 1
-      val c2 = typeMap(name)._1.toString.lastIndexOf(")") - 1
-      val s1 = typeMap(name)._1.toString.substring(c1, c2)
-
-      if (s1.contentEquals("IntRep")) {
-        val v1 = TypeRep.IntRep
-        return v1
-      }
-      else if (s1.contentEquals("UIntRep")) {
-        val v1 = TypeRep.UIntRep
-        return v1
-      }
-    }
-    TypeRep.NoTypeRep
-  }
-
-
-  // Returns Array inner type from MStruct parameters.
-  def getArraySType(name: String, id: String): String = {
-    if (!sTypes.contains(name)) {
-      throw new UnknownObjectNameException(s"$name is not the name of an object")
-    }
-    val c = sTypes(name).components.filter(_._1 == id).map(x => x._2)
-    var v = ""
-    if (c.nonEmpty) {
-      v = c.head.toString
-      if (v.contains(",")){
-        val index1 = v.lastIndexOf('(') + 1
-        v = v.substring(index1)
-        val index2 = v.indexOf(',') + 1
-        v = v.substring(index2)
-        val index3 = v.indexOf(")")
-        v = v.substring(0, index3)
-      }
-    }
-    if (c.head.toString.contains("StructRep")){
-      v = "StructRep"
-    }
-    else if (c.head.toString.contains("EnumRep")){
-      v = "EnumRep"
-    }
-    v
-  }
-
-
-  // Returns Array size (upper value).
-  def getArraySize(name: String): String = {
-    if (!typeMap.contains(name))
-      throw new UnknownObjectNameException(s"$name is not the name of an object")
-
-    val c1 = typeMap(name)._1.toString.indexOf("(", 0) + 1
-    val c2 = typeMap(name).toString().indexOf(",", 0) - 1
-
-    val s1 = typeMap(name)._1.toString.substring(c1, c2)
-    s1
-  }
-
-
-  // Returns Array size (upper value).
-  def getArraySSize(name: String, id: String): String = {
-    if (!sTypes.contains(name))
-      throw new UnknownObjectNameException(s"$name is not the name of an object")
-
-    val c = sTypes(name).components.filter(_._1 == id).map(x => x._2)
-    var v = ""
-    if (c.nonEmpty) {
-      v = c.head.toString
-      if (v.contains(",")){
-        val index1 = v.indexOf(',')
-        v = v.substring(0, index1)
-        v = v.substring(v.lastIndexOf('(') + 1)
-      }
-    }
-    v
-  }
-
-
-  // Returns a list of all message structs by variable name.
+  /**
+   * @return a list of all message structs by name.
+   */
   def getMStructs: List[String] = {
-    var MSs = List[String]()
-    for (i <- structuredTypeMap) {
-      if (getStructuredType(i._1).toString.contains("MStructRep")) {
-        MSs = (i._1) :: MSs
-      }
-    }
-    MSs
+    types.filter(pair => pair._2.isInstanceOf[MStructRep]).keys.toList
   }
 
-
-  // Checks to see if a given name is already present in the map of unstructured types.
-  // 0 for No, 1 for Yes.
-  def checkTypes(name: String): Int = {
-    val n = getTypeNames
-    var b = 0
-    for (i <- n) {
-      if (i == name) {
-        b = 1
-      }
-    }
-    b
-  }
-
-
-  // Checks to see if a given name is already present in the map of structured types.
-  // 0 for No, 1 for Yes.
-  def checkSTypes(name: String): Int = {
-    val n = getStructuredTypeNames
-    var b = 0
-    for (i <- n) {
-      if (i == name) {
-        b = 1
-      }
-      val m = getSType(i)
-      for (y <- m) {
-        if (y == name) {
-          b = 1
-        }
-      }
-    }
-    b
-  }
-
-
-  // Returns stored value on a structured type.
-  def getStructuredConstraint(name: String): String = {
-    if (!structuredTypeMap.contains(name))
-      throw new UnknownTypeNameException(s"$name is not the name of an type")
-
-    structuredTypeMap(name)._2
+  /**
+   * Checks to see if a given type name is already present in the table.
+   * @param symbol The name to search for.
+   * @return True if the table has the name mapped to a type.
+   */
+  def hasType(symbol: String): Boolean = {
+    types.contains(symbol)
   }
 }

@@ -2,9 +2,9 @@
 
 project Code_Generation is
 
-   for Main use ("main.adb");
+   for Main use ("integration_test_m0006.adb", "integration_test_m0004.adb", "integration_test_m0005.adb", "main.adb");
    for Object_Dir use "build";
-   for Source_Dirs use (".", "../../../CubedOS/src");
+   for Source_Dirs use (".", "../../../CubedOS/src", "../../../CubedOS/src/modules", "../../../CubedOS/src/library");
    for Languages use ("Ada");
 
    package Compiler is
@@ -12,7 +12,6 @@ project Code_Generation is
    end Compiler;
 
    package Prove is
-      for Switches use ("-j2", "--level=2");
    end Prove;
 
 end Code_Generation;

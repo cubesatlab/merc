@@ -1,7 +1,10 @@
 package edu.vtc.merc
 
+import edu.vtc.merc.AdaGeneratorCommon.processTreeForAda
+import org.antlr.v4.runtime.{CharStreams, CommonTokenStream}
+
 import java.io.PrintStream
-import org.antlr.v4.runtime.*
+
 
 /**
  * The main module of the program. It parses the command line, reads the input XDR file, and
@@ -54,7 +57,8 @@ object Main {
     if (commandOption.isEmpty) {
       println("Usage: java -jar Merc.jar [-k] [-tTemplateFolder] mxdr-source-file\n" +
               "   -k : Only check syntax and semantics of MXDR file\n" +
-              "   -t : Specifies the folder where package templates are located")
+              "   -t : Specifies the folder where package templates are located\n" +
+              "   -o : Specifies the output directory for generated api files. Defaults to the current directory\n")
       System.exit(1)
     }
     val Some((switchMap, sourceName)) = commandOption
@@ -69,11 +73,14 @@ object Main {
     val parser = new MXDRParser(tokens)
     val tree   = parser.specification()
 
-    // Walk the tree created during the parse and analyze it for semantic errors.
     val symbolTable = new BasicSymbolTable
     val reporter    = new BasicConsoleReporter
-    val myTable     = new STPopulation(sourceName, symbolTable, reporter)
+
+    // Populate the symbol table
+    val myTable = new SymbolTablePopulator(sourceName, symbolTable, reporter)
     myTable.visit(tree)
+
+    // Check the tree for semantic errors.
     val myAnalyzer  = new SemanticAnalyzer(sourceName, symbolTable, reporter)
     myAnalyzer.visit(tree)
 
@@ -81,31 +88,77 @@ object Main {
 
     if (switchMap.contains('k')) {
       println(s"*** $errorCount errors found.")
+      return
     }
-    else if (errorCount > 0) {
+    if (errorCount > 0) {
       println(s"*** $errorCount errors found. Aborting!")
+      return
     }
-    else {
-      println(s"$sourceName Successfully parsed and analyzed...")
-      println("Generating API package...")
 
-      // TODO: This won't work for paths without dots. Should that be ruled out earlier?
-      val baseFileName = sourceName.substring(0, sourceName.lastIndexOf('.'))
-      val baseFileNameLower = baseFileName.toLowerCase
-      val specificationFile = new PrintStream("cubedos-" + baseFileNameLower + "-api.ads")
-      val bodyFile = new PrintStream("cubedos-" + baseFileNameLower + "-api.adb")
+    // Continue to generate API files
 
-      val mySpecificationGenerator =
-        new SpecificationGenerator(templateFolder, baseFileName, symbolTable, specificationFile, reporter)
-      mySpecificationGenerator.visit(tree)
+    println(s"$sourceName Successfully parsed and analyzed...")
+    println("Generating API package...")
 
-      val myBodyGenerator =
-        new BodyGenerator(templateFolder, baseFileName, symbolTable, bodyFile, reporter)
-      myBodyGenerator.visit(tree)
+    // TODO: This won't work for paths without dots. Should that be ruled out earlier?
+    val outputPath = switchMap.getOrElse('o', sourceName.substring(0, sourceName.lastIndexOf('/') + 1))
+    val baseFileName = sourceName.substring(sourceName.lastIndexOf('/') + 1, sourceName.lastIndexOf('.'))
+    val baseFileNameLower = baseFileName.toLowerCase
 
-      specificationFile.close()
-      bodyFile.close()
-    }
+    val specificationFileName = baseFileNameLower + "-api.ads"
+    val bodyFileName = baseFileNameLower + "-api.adb"
+    val specificationFile = new PrintStream(outputPath + specificationFileName)
+    val bodyFile = new PrintStream(outputPath + bodyFileName)
+
+    // Pull the module name and prefix from the file name
+    var hasDash = false
+    val modulePrefix =
+      (if (baseFileName.contains("-")) {
+        hasDash = true
+          baseFileName.substring(0, baseFileName.lastIndexOf('-'))
+
+      } else "")
+        .replace('-', '.')
+
+    val moduleName = baseFileName.substring(modulePrefix.length + (if (hasDash) 1 else 0), baseFileName.length)
+
+    val mxdrTree = new MXDRTree()
+    symbolTable.getAll().foreach(pair => {
+      val (name, entity) = pair
+      mxdrTree.add(entity)
+    })
+
+    val (processedTree, processedTable) = processTreeForAda(mxdrTree, symbolTable)
+
+    val dependencyReader = new DependencyReader()
+    dependencyReader.visit(tree)
+
+    println("Spec file is " + outputPath + specificationFileName)
+
+    new SpecificationGenerator(
+        templateFolder,
+        modulePrefix,
+        moduleName,
+        specificationFileName,
+        processedTable,
+        processedTree,
+        dependencyReader,
+        specificationFile,
+        reporter).generate()
+
+    new BodyGenerator(
+        templateFolder,
+        modulePrefix,
+        moduleName,
+        bodyFileName,
+        processedTable,
+        processedTree,
+        bodyFile,
+        reporter).generate()
+
+    specificationFile.close()
+    bodyFile.close()
+
   }
 
 }

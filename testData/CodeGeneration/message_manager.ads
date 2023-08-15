@@ -5,15 +5,19 @@
 --
 --------------------------------------------------------------------------------
 pragma SPARK_Mode(On);
-pragma Profile(Ravenscar);
+pragma Profile(Jorvik);
 pragma Partition_Elaboration_Policy(Sequential);
 
 with CubedOS.Generic_Message_Manager;
 pragma Elaborate_All(CubedOS.Generic_Message_Manager);
+with Name_Resolver;
 
+
+  --  type Domain_Metadata(Module_Count : Positive) is
+  --      record
+  --         ID : Domain_ID_Type;
+  --         Module_IDs : Module_ID_Set(1 .. Module_Count);
+  --      end record;
 package Message_Manager is
   new CubedOS.Generic_Message_Manager
-    (Domain_Number =>  1,
-     Module_Count  => 16,
-     Mailbox_Size  =>  8,
-     Maximum_Message_Size => 1024);
+    (Domain => Name_Resolver.Domain);
