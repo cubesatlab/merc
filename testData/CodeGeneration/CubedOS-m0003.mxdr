@@ -9,7 +9,7 @@ typedef v3 av1[1000];
 
 typedef int v4;
 typedef int v5 range 0 .. 100;
-typedef int v6 is v5 range 0 .. v2'Last;
+typedef int v6 range 0 .. v2'Last;
 
 typedef unsigned hyper v7;
 typedef unsigned hyper v8 range 0 .. 100;
@@ -20,24 +20,32 @@ typedef hyper v11 range 0 .. 100;
 typedef hyper v12 is natural range 0 .. 1;
 
 typedef float v13;
-typedef float v99 range 1 .. 100;
-typedef float v98 is v99 range 1 .. 2;
+typedef float v99 range 1.0 .. 100.0;
+typedef float v98 is v99 range 1.0 .. 2.0;
 
 typedef double v14;
 
 typedef bool v15;
 
 typedef string v16;
+typedef string v114<>;
+typedef string v115<10>;
+typedef string v116<0>;
+typedef string v117<Natural'First>;
 
-typedef tai_kwon_do v18;
-typedef tai_kwon_do v19 range 0 .. 100;
-typedef tai_kwon_do v20 is v19 range 0 .. 1;
+typedef int v18;
+typedef int v19 is v18;
+typedef int v20;
+
+typedef v18 tai_kwon_do;
+//typedef v19 tai_kwon_do range 0 .. 100;
+typedef v20 tai_kwon_dee is v19 range 0 .. 1;
 
 typedef Ada.Real_Time.Time_Span v21;
 
 typedef Ada.Real_Time.Time v22;
 
-typedef CubedOS.Lib.Octet_Array v23;
+typedef opaque v23<>;
 
 typedef enum {red, blue, green} v24;
 typedef enum {red=1, blue=2, green=3} v25;
@@ -65,7 +73,7 @@ typedef struct {
         tai_kwon_dee sv9;
         Ada.Real_Time.Time_Span sv10;
         Ada.Real_Time.Time sv11;
-        CubedOS.Lib.Octet_Array sv12;
+        opaque sv12[12];
         v24 sv13;
         v25 sv14;
         v26 sv15;
@@ -93,7 +101,7 @@ struct v32 {
         tai_kwon_dee sv9;
         Ada.Real_Time.Time_Span sv10;
         Ada.Real_Time.Time sv11;
-        CubedOS.Lib.Octet_Array sv12;
+        opaque sv12[10];
         v24 sv13;
         v25 sv14;
         v26 sv15;
@@ -109,23 +117,25 @@ struct v33 {
         v32 sv2;
         };
 
-typedef unsigned int v34 = 1;
+typedef unsigned int v34;
 
-typedef int v35 = 1;
+typedef int v35;
 
-typedef unsigned hyper v36 = 1;
+typedef unsigned hyper v36;
 
-typedef hyper v37 = 1;
+typedef hyper v37;
 
-typedef float v38 = 3;
+typedef float v38;
 
-typedef double v39 = 3;
+typedef double v39;
 
 typedef opaque v41<>;
 
 typedef string v42<>;
 
 typedef string v43;
+
+typedef opaque tai_kwon_doo_wop[20];
 
 typedef tai_kwon_doo_wop v44<>;
 
@@ -156,7 +166,7 @@ Ada.Real_Time.Time_Span v57;
 
 Ada.Real_Time.Time v58;
 
-CubedOS.Lib.Octet_Array v59;
+opaque v59<>;
 
 enum {red, blue, green} v60;
 enum {red=1, blue=2, green=3} v61;
@@ -177,7 +187,7 @@ struct {
         tai_kwon_dee sv9;
         Ada.Real_Time.Time_Span sv10;
         Ada.Real_Time.Time sv11;
-        CubedOS.Lib.Octet_Array sv12;
+        opaque sv12<>;
         v60 sv13;
         v61 sv14;
         v62 sv15;
@@ -201,6 +211,7 @@ float v69 = 3;
 double v70 = 3;
 
 opaque v71<>;
+opaque v171<100>;
 
 string v72<>;
 
@@ -297,7 +308,7 @@ message struct -> v79 {
         tai_kwon_do sv83;
         Ada.Real_Time.Time_Span sv84;
         Ada.Real_Time.Time sv85;
-        CubedOS.Lib.Octet_Array sv86;
+        opaque sv86<>;
         opaque sv88<>;
         string sv90;
         tai_kwon_doo_wop sv91<>;
@@ -386,7 +397,7 @@ message struct <- v80 {
         tai_kwon_do sv83;
         Ada.Real_Time.Time_Span sv84;
         Ada.Real_Time.Time sv85;
-        CubedOS.Lib.Octet_Array sv86;
+        opaque sv86<>;
         opaque sv88<>;
         string sv89<>;
         tai_kwon_doo_wop sv91<>;

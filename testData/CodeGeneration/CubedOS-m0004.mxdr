@@ -6,13 +6,13 @@ typedef f1 f2[5];
 typedef unsigned int f3 range 1 .. 100;
 typedef f3 f4[5];
 
-typedef hyper f5 range 1 .. 100;
+typedef hyper f5 range 0 .. 69;
 typedef f5 f6[5];
 
-typedef unsigned hyper f7 range -11 .. 100;
+typedef unsigned hyper f7 range 11 .. 100;
 typedef f7 f8[5];
 
-typedef float f9 range -1.12 .. 100;
+typedef float f9 range -1.12 .. 100.0;
 typedef f9 f10[5];
 
 typedef double f11 range 1.23 .. 100.67;

@@ -1,22 +1,41 @@
 package edu.vtc.merc
 
+import edu.vtc.merc.AdaGeneratorCommon.{adaFriendlyTypeName, xdrTypeName}
+import edu.vtc.merc.TypeRep._
+
 import java.io.File
 
 class BodyGenerator(
-  templateFolder : String,
-  nameOfFile     : String,
-  symbolTable    : BasicSymbolTable,
-  out            : java.io.PrintStream,
-  reporter       : Reporter) extends MXDRBaseVisitor[Void] {
+     templateFolder : String,
+
+     /**
+      * The formal prefix to the module name,
+      * not including the final dot.
+      * In CubedOS.Time_Server the prefix is
+      * "CubedOS" without the "."
+      */
+     modulePrefix : String,
+     /**
+      * The properly capitalized, module name.
+      * Doesn't include "-api" or any dots.
+      */
+     moduleName     : String,
+     /**
+      * The file name of the specification file being written to.
+      * Ex) cubedos-time_server-api.adb
+      */
+     fileName       : String,
+     symbolTable    : BasicSymbolTable,
+     mxdrTree       : MXDRTree,
+     out            : java.io.PrintStream,
+     reporter       : Reporter) {
 
   // The number of indentations where output lines start.
   private var indentationLevel = 0
-  private var typeOfModule = ""
 
   private def doIndentation(): Unit = {
-    for (i <- 0 until indentationLevel) {
+    for (_ <- 0 until indentationLevel)
       out.print("   ")
-    }
   }
 
   private def insertLine(bulk: List[String], str: String, indicator: String): List[String] = {
@@ -30,12 +49,12 @@ class BodyGenerator(
     newBulk.reverse
   }
 
-  def addedLines(lines: List[String]): List[String] = {
+  private def addedLines(lines: List[String]): List[String] = {
     var flagTimer = 0
     for (i <- symbolTable.getMStructs) {
-      for (ii <- symbolTable.getSType(i)) {
-        if (symbolTable.getST(i, ii).contains("TimeSpanRep") ||
-          symbolTable.getST(i, ii).contains("TimeRep")) {
+      for (ii <- symbolTable.getStructComponentNames(i)) {
+        if (symbolTable.getStructComponentTypeName(i, ii).contains("TimeSpanRep") ||
+          symbolTable.getStructComponentTypeName(i, ii).contains("TimeRep")) {
           flagTimer = 1
         }
       }
@@ -53,7 +72,7 @@ class BodyGenerator(
     l
   }
 
-  def processTemplate(): List[String] = {
+  private def processTemplate(): List[String] = {
     val source = scala.io.Source.fromFile(templateFolder + File.separator + "template.adb")
     val lines = source.getLines().toList
     val newLines = addedLines(lines)
@@ -61,6017 +80,718 @@ class BodyGenerator(
     newLines
   }
 
-  override def visitSpecification(ctx: MXDRParser.SpecificationContext): Void = {
+  /**
+   * Produces the Ada body file.
+   */
+  def generate(): Unit = {
     val lines = processTemplate()
-    val replacementString = nameOfFile
     for (line <- lines) {
-      val newLine = line.replace("%MODULENAME%", replacementString)
+      val prefixString = if (modulePrefix.nonEmpty) modulePrefix + "." else ""
+      val newLine = line.replace("%MODULENAME%", prefixString + moduleName)
+                        .replace("%FILEBASENAME%", fileName)
       if (line.contains("%BULK%")) {
         indentationLevel += 1
-        visitChildren(ctx)
+        generateBulk()
         indentationLevel -= 1
       }
       else {
         out.println(newLine)
       }
     }
-    null
   }
 
-  //Process appropriate variable names for struct elements before decode body.
-  def processStructDF(i: String, l: List[String], structNum: Int): Void = {
-    if (structNum == 0) {
-      for (y <- symbolTable.getSType(i)) {
-        val sp = symbolTable.getStructuredTypeParent(i, y)
-        var sd = ""
-        for (u <- l) {
-          if (u != "") {
-            sd = sd.concat(u)
-            sd = sd.concat("_")
-          }
-        }
-        if (symbolTable.getST(i, y).contains("StructRep")) {
-          var ll = List[String]()
-          ll = l :+ y
-          processStructDF(sp, ll, 0)
-        }
-        else if (symbolTable.getST(i, y).contains("ArrayRep")) {
-          if (symbolTable.getArraySType(i, y) == "EnumRep") {
-            doIndentation()
-            out.println("Raw_" + sd + y + "   : XDR.XDR_Unsigned;")
-          }
-          else if (symbolTable.getArraySType(i, y) == "StringRep") {
-            doIndentation()
-            out.println("Raw_" + sd + y + "   : XDR.XDR_Unsigned;")
-          }
-          else if (symbolTable.getArraySType(i, y) == "DataRep") {
-            doIndentation()
-            out.println("Raw_" + sd + y + "   : XDR.XDR_Unsigned;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "BoolRep") {
-            doIndentation()
-            out.println("Raw_" + sd + y + "   : XDR.XDR_Unsigned;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "BoolRep") {
-            doIndentation()
-            out.println("Raw_" + sd + y + "   : XDR.XDR_Unsigned;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "UHyperRep") {
-            doIndentation()
-            out.println("Raw_" + sd + y + "   : XDR.XDR_Unsigned_Hyper;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "HyperRep") {
-            doIndentation()
-            out.println("Raw_" + sd + y + "   : XDR.XDR_Hyper;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "UHyperRep") {
-            doIndentation()
-            out.println("Raw_" + sd + y + "   : XDR.XDR_Unsigned_Hyper;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "HyperRep") {
-            doIndentation()
-            out.println("Raw_" + sd + y + "   : XDR.XDR_Hyper;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "DoubleRep") {
-            doIndentation()
-            out.println("Raw_" + sd + y + "   : XDR.XDR_Double;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "DoubleRep") {
-            doIndentation()
-            out.println("Raw_" + sd + y + "   : XDR.XDR_Double;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "FloatRep") {
-            doIndentation()
-            out.println("Raw_" + sd + y + "   : XDR.XDR_Float;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "FloatRep") {
-            doIndentation()
-            out.println("Raw_" + sd + y + "   : XDR.XDR_Float;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "UIntRep") {
-            doIndentation()
-            out.println("Raw_" + sd + y + "   : XDR.XDR_Unsigned;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "IntRep") {
-            doIndentation()
-            out.println("Raw_" + sd + y + "   : XDR.XDR_Integer;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "UIntRep") {
-            doIndentation()
-            out.println("Raw_" + sd + y + "   : XDR.XDR_Unsigned;")
-
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "IntRep") {
-            doIndentation()
-            out.println("Raw_" + sd + y + "   : XDR.XDR_Integer;")
-          }
-          else {
-            doIndentation()
-            out.println("Raw_" + sd + y + "   : XDR.XDR_Unsigned;")
-          }
-        }
-        else if (symbolTable.getST(i, y).contains("EnumRep")) {
-          doIndentation()
-          out.println("Raw_" + sd + y + " : XDR.XDR_Unsigned;")
-        }
-        else if (symbolTable.getST(i, y).contains("StringRep")) {
-          doIndentation()
-          out.println("Raw_" + sd + y + "_Size : XDR.XDR_Unsigned;")
-        }
-        else if (symbolTable.getST(i, y).contains("DataRep")) {
-          doIndentation()
-          out.println("Raw_Size : XDR.XDR_Unsigned;")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("BoolRep")) {
-          doIndentation()
-          out.println("Raw_" + sd + y + "   : XDR.XDR_Boolean;")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("BoolRep")) {
-          doIndentation()
-          out.println("Raw_" + sd + y + "   : XDR.XDR_Boolean;")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("UHyperRep")) {
-          doIndentation()
-          out.println("Raw_" + sd + y + "   : XDR.XDR_Unsigned_Hyper;")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("HyperRep")) {
-          doIndentation()
-          out.println("Raw_" + sd + y + "   : XDR.XDR_Hyper;")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("UHyperRep")) {
-          doIndentation()
-          out.println("Raw_" + sd + y + "   : XDR.XDR_Unsigned_Hyper;")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("HyperRep")) {
-          doIndentation()
-          out.println("Raw_" + sd + y + "   : XDR.XDR_Hyper;")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("DoubleRep")) {
-          doIndentation()
-          out.println("Raw_" + sd + y + "   : XDR.XDR_Double;")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("DoubleRep")) {
-          doIndentation()
-          out.println("Raw_" + sd + y + "   : XDR.XDR_Double;")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("FloatRep")) {
-          doIndentation()
-          out.println("Raw_" + sd + y + "   : XDR.XDR_Float;")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("FloatRep")) {
-          doIndentation()
-          out.println("Raw_" + sd + y + "   : XDR.XDR_Float;")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("UIntRep")) {
-          doIndentation()
-          out.println("Raw_" + sd + y + "   : XDR.XDR_Unsigned;")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("IntRep")) {
-          doIndentation()
-          out.println("Raw_" + sd + y + "   : XDR.XDR_Integer;")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("UIntRep")) {
-          doIndentation()
-          out.println("Raw_" + sd + y + "   : XDR.XDR_Unsigned;")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("IntRep")) {
-          doIndentation()
-          out.println("Raw_" + sd + y + "   : XDR.XDR_Integer;")
-        }
-        else if (symbolTable.getST(i, y).contains("TimeSpanRep")) {
-          doIndentation()
-          out.println("Raw_Interval  : XDR.XDR_Unsigned;")
-        }
-        else if (symbolTable.getST(i, y).contains("TimeRep")) {
-          doIndentation()
-          out.println("Seconds : Ada.Real_Time.Seconds_Count;")
-          doIndentation()
-          out.println("Raw_" + sd + y + "   : XDR.XDR_Unsigned;")
-        }
-        else {
-          doIndentation()
-          out.println("Raw_" + sd + y + "   : XDR.XDR_Unsigned;")
-        }
-      }
-    }
-    else {
-      var sd = ""
-      for (u <- l) {
-        if (u != "") {
-          if (u == l.head) {
-            sd = sd.concat(u + "_")
-          }
-          else {
-            sd = sd.concat(u)
-            if (u != l.last) {
-              sd = sd.concat("_")
-            }
-          }
-        }
-      }
-      for (y <- symbolTable.getSType(i)) {
-        val sp = symbolTable.getStructuredTypeParent(i, y)
-        if (symbolTable.getST(i, y).contains("StructRep")) {
-          var ll = List[String]()
-          ll = l :+ y
-          processStructDF(sp, ll, 0)
-        }
-        else if (symbolTable.getST(i, y).contains("ArrayRep")) {
-          if (symbolTable.getArraySType(i, y) == "EnumRep") {
-            doIndentation()
-            out.println("Raw_" + sd + y + "   : XDR.XDR_Unsigned;")
-          }
-          else if (symbolTable.getArraySType(i, y) == "StringRep") {
-            doIndentation()
-            out.println("Raw_" + sd + y + "   : XDR.XDR_Unsigned;")
-          }
-          else if (symbolTable.getArraySType(i, y) == "DataRep") {
-            doIndentation()
-            out.println("Raw_" + sd + y + "   : XDR.XDR_Unsigned;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "BoolRep") {
-            doIndentation()
-            out.println("Raw_" + sd + y + "   : XDR.XDR_Unsigned;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "BoolRep") {
-            doIndentation()
-            out.println("Raw_" + sd + y + "   : XDR.XDR_Unsigned;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "UHyperRep") {
-            doIndentation()
-            out.println("Raw_" + sd + y + "   : XDR.XDR_Unsigned_Hyper;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "HyperRep") {
-            doIndentation()
-            out.println("Raw_" + sd + y + "   : XDR.XDR_Hyper;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "UHyperRep") {
-            doIndentation()
-            out.println("Raw_" + sd + y + "   : XDR.XDR_Unsigned_Hyper;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "HyperRep") {
-            doIndentation()
-            out.println("Raw_" + sd + y + "   : XDR.XDR_Hyper;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "DoubleRep") {
-            doIndentation()
-            out.println("Raw_" + sd + y + "   : XDR.XDR_Double;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "DoubleRep") {
-            doIndentation()
-            out.println("Raw_" + sd + y + "   : XDR.XDR_Double;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "FloatRep") {
-            doIndentation()
-            out.println("Raw_" + sd + y + "   : XDR.XDR_Float;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "FloatRep") {
-            doIndentation()
-            out.println("Raw_" + sd + y + "   : XDR.XDR_Float;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "UIntRep") {
-            doIndentation()
-            out.println("Raw_" + sd + y + "   : XDR.XDR_Unsigned;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "IntRep") {
-            doIndentation()
-            out.println("Raw_" + sd + y + "   : XDR.XDR_Integer;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "UIntRep") {
-            doIndentation()
-            out.println("Raw_" + sd + y + "   : XDR.XDR_Unsigned;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "IntRep") {
-            doIndentation()
-            out.println("Raw_" + sd + y + "   : XDR.XDR_Integer;")
-          }
-          else {
-            doIndentation()
-            out.println("Raw_" + sd + y + "   : XDR.XDR_Unsigned;")
-          }
-        }
-        else if (symbolTable.getST(i, y).contains("EnumRep")) {
-          doIndentation()
-          out.println("Raw_" + sd + y + " : XDR.XDR_Unsigned;")
-        }
-        else if (symbolTable.getST(i, y).contains("StringRep")) {
-          doIndentation()
-          out.println("Raw_" + sd + y + "_Size : XDR.XDR_Unsigned;")
-        }
-        else if (symbolTable.getST(i, y).contains("DataRep")) {
-          doIndentation()
-          out.println("Raw_Size : XDR.XDR_Unsigned;")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("BoolRep")) {
-          doIndentation()
-          out.println("Raw_" + sd + y + "   : XDR.XDR_Boolean;")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("BoolRep")) {
-          doIndentation()
-          out.println("Raw_" + sd + y + "   : XDR.XDR_Boolean;")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("UHyperRep")) {
-          doIndentation()
-          out.println("Raw_" + sd + y + "   : XDR.XDR_Unsigned_Hyper;")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("HyperRep")) {
-          doIndentation()
-          out.println("Raw_" + sd + y + "   : XDR.XDR_Hyper;")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("UHyperRep")) {
-          doIndentation()
-          out.println("Raw_" + sd + y + "   : XDR.XDR_Unsigned_Hyper;")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("HyperRep")) {
-          doIndentation()
-          out.println("Raw_" + sd + y + "   : XDR.XDR_Hyper;")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("DoubleRep")) {
-          doIndentation()
-          out.println("Raw_" + sd + y + "   : XDR.XDR_Double;")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("DoubleRep")) {
-          doIndentation()
-          out.println("Raw_" + sd + y + "   : XDR.XDR_Double;")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("FloatRep")) {
-          doIndentation()
-          out.println("Raw_" + sd + y + "   : XDR.XDR_Float;")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("FloatRep")) {
-          doIndentation()
-          out.println("Raw_" + sd + y + "   : XDR.XDR_Float;")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("UIntRep")) {
-          doIndentation()
-          out.println("Raw_" + sd + y + "   : XDR.XDR_Unsigned;")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("IntRep")) {
-          doIndentation()
-          out.println("Raw_" + sd + y + "   : XDR.XDR_Integer;")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("UIntRep")) {
-          doIndentation()
-          out.println("Raw_" + sd + y + "   : XDR.XDR_Unsigned;")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("IntRep")) {
-          doIndentation()
-          out.println("Raw_" + sd + y + "   : XDR.XDR_Integer;")
-        }
-        else if (symbolTable.getST(i, y).contains("TimeSpanRep")) {
-          doIndentation()
-          out.println("Raw_Interval  : XDR.XDR_Unsigned;")
-        }
-        else if (symbolTable.getST(i, y).contains("TimeRep")) {
-          doIndentation()
-          out.println("Seconds : Ada.Real_Time.Seconds_Count;")
-          doIndentation()
-          out.println("Raw_" + sd + y + "   : XDR.XDR_Unsigned;")
-        }
-        else {
-          doIndentation()
-          out.println("Raw_" + sd + y + "   : XDR.XDR_Unsigned;")
-        }
-      }
-    }
-    null
-  }
-
-  //Process struct elements appropriately in decodes.
-  def processStructD(id: String, i: String, l: List[String], posFlag: Int, stringFlag: String, structNum: Int): Void = {
-    if (structNum == 0) {
-      for (y <- symbolTable.getSType(i)) {
-        val sp = symbolTable.getStructuredTypeParent(i, y)
-        var sd = ""
-        for (u <- l) {
-          if (u != "") {
-            sd = sd.concat(u)
-            sd = sd.concat("_")
-          }
-        }
-        var sf = ""
-        for (u <- l) {
-          if (u != "") {
-            sf = sf.concat(u)
-            if (u != l.last) {
-              sf = sf.concat(".")
-            }
-          }
-        }
-        if (symbolTable.getST(i, y).contains("StructRep")) {
-          var ll = List[String]()
-          ll = l :+ y
-          processStructD(i, sp, ll, posFlag, stringFlag, 0)
-        }
-        else if (symbolTable.getST(i, y).contains("ArrayRep")) {
-          if (symbolTable.getArraySType(i, y) == "EnumRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("if Decode_Status = Success then")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            doIndentation()
-            out.println("if Raw_" + sd + y + " in " + sp +
-              "'Pos(" + sp + "'First) .. " +
-              sp + "'Pos(" + sp +
-              "'Last) then")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sf + "." + y + "(I)" + " := " + sp + "'Val(Raw_" + sd + y + ");")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("else")
-            indentationLevel += 1
-            doIndentation()
-            out.println("Decode_Status := Malformed;")
-            doIndentation()
-            out.println(sf + "." + y + "(I)" + " := " + sp + "'First;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          if (symbolTable.getArraySType(i, y) == "StringRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("if Decode_Status = Success then")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + "_Size, Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            doIndentation()
-            out.println("if Raw_" + sd + y +
-              "_Size in XDR.XDR_Unsigned(Natural'First) .. XDR.XDR_Unsigned(Natural'Last) then")
-            indentationLevel += 1
-            doIndentation()
-            out.println(y + "_Size := Natural(Raw_" + sd + y + "_Size);")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("else")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sd + y + "_Size := 0;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            doIndentation()
-            out.println("if " + sd + y + "_Size < 1 then")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Decode(Message.Payload, Position, " + sd + y + "(" + sd + y + "'First .. " + y +
-              "'First + (" + sd + y + "_Size - 1)), Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "BoolRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("if Decode_Status = Success then")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            doIndentation()
-            out.println(sd + "." + y + "(I)" + " := Boolean'Val(XDR.XDR_Boolean'Pos(Raw_" + i + "));")
-            doIndentation()
-            out.println("Decode_Status := Success;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "BoolRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("if Decode_Status = Success then")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            doIndentation()
-            out.println(sd + "." + y + "(I)" + " := " + sp + "'Val(XDR.XDR_Boolean'Pos(Raw_" + i + "));")
-            doIndentation()
-            out.println("Decode_Status := Success;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "UHyperRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("if Decode_Status = Success then")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            doIndentation()
-            out.println("if Raw_" + sd + y + " in XDR.XDR_Unsigned_Hyper(Lib.U_Hyper_Type" +
-              "'First) .. XDR.XDR_Unsigned_Hyper(Lib.U_Hyper_Type'Last) then")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sf + "." + y + "(I)" + " := Lib.U_Hyper_Type(Raw_" + sd + y + ");")
-            doIndentation()
-            out.println("Decode_Status := Success;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("else")
-            indentationLevel += 1
-            doIndentation()
-            out.println("Decode_Status := Malformed;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "HyperRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("if Decode_Status = Success then")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            doIndentation()
-            out.println("if Raw_" + sd + y + " in XDR.XDR_Hyper(Lib.Hyper_Type" +
-              "'First) .. XDR.XDR_Hyper(Lib.Hyper_Type'Last) then")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sf + "." + y + "(I)" + " := Lib.Hyper_Type(Raw_" + sd + y + ");")
-            doIndentation()
-            out.println("Decode_Status := Success;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("else")
-            indentationLevel += 1
-            doIndentation()
-            out.println("Decode_Status := Malformed;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "UHyperRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("if Decode_Status = Success then")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            doIndentation()
-            out.println("if Raw_" + sd + y + " in XDR.XDR_Unsigned_Hyper(" + sp +
-              "'First) .. XDR.XDR_Unsigned_Hyper(" + sp + "'Last) then")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sf + "." + y + "(I)" + " := " + sp + "(Raw_" + sd + y + ");")
-            doIndentation()
-            out.println("Decode_Status := Success;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("else")
-            indentationLevel += 1
-            doIndentation()
-            out.println("Decode_Status := Malformed;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "HyperRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("if Decode_Status = Success then")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            doIndentation()
-            out.println("if Raw_" + sd + y + " in XDR.XDR_Hyper(" + sp +
-              "'First) .. XDR.XDR_Hyper(" + sp + "'Last) then")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sf + "." + y + "(I)" + " := " + sp + "(Raw_" + sd + y + ");")
-            doIndentation()
-            out.println("Decode_Status := Success;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("else")
-            indentationLevel += 1
-            doIndentation()
-            out.println("Decode_Status := Malformed;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "DoubleRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("if Decode_Status = Success then")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            doIndentation()
-            out.println("if Raw_" + sd + y + " in XDR.XDR_Double(Double" +
-              "'First) .. XDR.XDR_Double(Double'Last) then")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sf + "." + y + "(I)" + " := Double(Raw_" + sd + y + ");")
-            doIndentation()
-            out.println("Decode_Status := Success;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("else")
-            indentationLevel += 1
-            doIndentation()
-            out.println("Decode_Status := Malformed;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "DoubleRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("if Decode_Status = Success then")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            doIndentation()
-            out.println("if Raw_" + sd + y + " in XDR.XDR_Double(" + sp +
-              "'First) .. XDR.XDR_Double(" + sp + "'Last) then")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sf + "." + y + "(I)" + " := " + sp + "(Raw_" + sd + y + ");")
-            doIndentation()
-            out.println("Decode_Status := Success;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("else")
-            indentationLevel += 1
-            doIndentation()
-            out.println("Decode_Status := Malformed;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "FloatRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("if Decode_Status = Success then")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            doIndentation()
-            out.println("if Raw_" + sd + y + " in XDR.XDR_Float(Float" +
-              "'First) .. XDR.XDR_Float(Float'Last) then")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sf + "." + y + "(I)" + " := Float(Raw_" + sd + y + ");")
-            doIndentation()
-            out.println("Decode_Status := Success;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("else")
-            indentationLevel += 1
-            doIndentation()
-            out.println("Decode_Status := Malformed;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "FloatRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("if Decode_Status = Success then")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            doIndentation()
-            out.println("if Raw_" + sd + y + " in XDR.XDR_Float(" + sp +
-              "'First) .. XDR.XDR_Float(" + sp + "'Last) then")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sf + "." + y + "(I)" + " := " + sp + "(Raw_" + sd + y + ");")
-            doIndentation()
-            out.println("Decode_Status := Success;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("else")
-            indentationLevel += 1
-            doIndentation()
-            out.println("Decode_Status := Malformed;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "UIntRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("if Decode_Status = Success then")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            doIndentation()
-            out.println("if Raw_" + sd + y + " in XDR.XDR_Unsigned(Lib.Quadruple_Octet'First) .. XDR.XDR_Unsigned(Lib.Quadruple_Octet'Last) then")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sf + "." + y + "(I)" + " := Lib.Quadruple_Octet(Raw_" + sd + y + ");")
-            doIndentation()
-            out.println("Decode_Status := Success;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("else")
-            indentationLevel += 1
-            doIndentation()
-            out.println("Decode_Status := Malformed;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "IntRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("if Decode_Status = Success then")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            doIndentation()
-            out.println("if Raw_" + sd + y + " in XDR.XDR_Integer(Integer'First) .. XDR.XDR_Integer(Integer'Last) then")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sf + "." + y + "(I)" + " := Integer(Raw_" + sd + y + ");")
-            doIndentation()
-            out.println("Decode_Status := Success;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("else")
-            indentationLevel += 1
-            doIndentation()
-            out.println("Decode_Status := Malformed;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "UIntRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("if Decode_Status = Success then")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            doIndentation()
-            out.println("if Raw_" + sd + y + " in XDR.XDR_Unsigned(Lib.Quadruple_Octet'First) .. XDR.XDR_Unsigned(Lib.Quadruple_Octet'Last) then")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sf + "." + y + "(I)" + " := " + sp + "(Raw_" + sd + y + ");")
-            doIndentation()
-            out.println("Decode_Status := Success;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("else")
-            indentationLevel += 1
-            doIndentation()
-            out.println("Decode_Status := Malformed;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "IntRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("if Decode_Status = Success then")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            doIndentation()
-            out.println("if Raw_" + sd + y + " in XDR.XDR_Integer(Integer'First) .. XDR.XDR_Integer(Integer'Last) then")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sf + "." + y + "(I)" + " := " + sp + "(Raw_" + sd + y + ");")
-            doIndentation()
-            out.println("Decode_Status := Success;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("else")
-            indentationLevel += 1
-            doIndentation()
-            out.println("Decode_Status := Malformed;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-        }
-        else if (symbolTable.getST(i, y).contains("EnumRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println("if Raw_" + sd + y + " in " + sp +
-            "'Pos(" + sp + "'First) .. " +
-            sp + "'Pos(" + sp +
-            "'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(sf + "." + y + " := " + sp + "'Val(Raw_" + sd + y + ");")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          doIndentation()
-          out.println(sf + "." + y + " := " + sp + "'First;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else if (symbolTable.getST(i, y).contains("StringRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + "_Size, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-          doIndentation()
-          out.println("if Raw_" + sd + y +
-            "_Size in XDR.XDR_Unsigned(Natural'First) .. XDR.XDR_Unsigned(Natural'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(y + "_Size := Natural(Raw_" + sd + y + "_Size);")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println(sd + y + "_Size := 0;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          doIndentation()
-          out.println("if " + sd + y + "_Size < 1 then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, " + y + "(" + y + "'First .. " + y +
-            "'First + (" + y + "_Size - 1)), Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else if (sp == "null" && symbolTable.getST(id, i).contains("BoolRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println(i + " := Boolean'Val(XDR.XDR_Boolean'Pos(Raw_" + i + "));")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else if (sp != "null" && symbolTable.getST(id, i).contains("BoolRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println(i + " := " + sp + "'Val(XDR.XDR_Boolean'Pos(Raw_" + i + "));")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("UHyperRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println("if Raw_" + sd + y + " in XDR.XDR_Unsigned_Hyper(Lib.U_Hyper_Type'First) .. XDR.XDR_Unsigned_Hyper(Lib.U_Hyper_Type'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(sf + "." + y + " := Lib.U_Hyper_Type(Raw_" + sd + y + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("HyperRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println("if Raw_" + sd + y + " in XDR.XDR_Hyper(Lib.Hyper_Type'First) .. XDR.XDR_Hyper(Lib.Hyper_Type'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(sf + "." + y + " := Lib.Hyper_Type(Raw_" + sd + y + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("UHyperRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println("if Raw_" + sd + y + " in XDR.XDR_Unsigned_Hyper(" + sp +
-            "'First) .. XDR.XDR_Unsigned_Hyper(" + sp + "'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(sf + "." + y + " := " + sp + "(Raw_" + sd + y + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("HyperRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println("if Raw_" + sd + y + " in XDR.XDR_Hyper(" + sp +
-            "'First) .. XDR.XDR_Hyper(" + sp + "'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(sf + "." + y + " := " + sp + "(Raw_" + sd + y + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("DoubleRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println("if Raw_" + sd + y + " in XDR.XDR_Double(Double'First) .. XDR.XDR_Double(Double'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(sf + "." + y + " := Double(Raw_" + sd + y + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("DoubleRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println("if Raw_" + sd + y + " in XDR.XDR_Double(" + sp +
-            "'First) .. XDR.XDR_Double(" + sp + "'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(sf + "." + y + " := " + sp + "(Raw_" + sd + y + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("FloatRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println("if Raw_" + sd + y + " in XDR.XDR_Float(Float'First) .. XDR.XDR_Float(Float'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(sf + "." + y + " := Float(Raw_" + sd + y + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("FloatRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println("if Raw_" + sd + y + " in XDR.XDR_Float(" + sp +
-            "'First) .. XDR.XDR_Float(" + sp + "'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(sf + "." + y + " := " + sp + "(Raw_" + sd + y + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("UIntRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println("if Raw_" + sd + y + " in XDR.XDR_Unsigned(Lib.Quadruple_Octet'First) .. XDR.XDR_Unsigned(Lib.Quadruple_Octet'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(sf + "." + y + " := Lib.Quadruple_Octet(Raw_" + sd + y + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("IntRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println("if Raw_" + sd + y + " in XDR.XDR_Integer(Integer'First) .. XDR.XDR_Integer(Integer'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(sf + "." + y + " := Integer(Raw_" + sd + y + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("UIntRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println("if Raw_" + sd + y + " in XDR.XDR_Unsigned(" + sp +
-            "'First) .. XDR.XDR_Unsigned(" + sp + "'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(sf + "." + y + " := " + sp + "(Raw_" + sd + y + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("IntRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println("if Raw_" + sd + y + " in XDR.XDR_Integer(" + sp +
-            "'First) .. XDR.XDR_Integer(" + sp + "'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(sf + "." + y + " := " + sp + "(Raw_" + sd + y + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else if (symbolTable.getST(i, y).contains("DataRep") || symbolTable.getST(i, y).contains("OpaqueRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_Size, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-          doIndentation()
-          out.println("if Raw_Size in XDR.XDR_Unsigned(CubedOS.Lib.Octet_Array_Count'First) .. XDR.XDR_Unsigned(CubedOS.Lib.Octet_Array_Count'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Size := CubedOS.Lib.Octet_Array_Count(Raw_Size);")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          doIndentation()
-          out.println("if Size < " + y + "'Length then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, " + y + "(" + y + "'First .. " + y + "'First + Size - 1), Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else if (symbolTable.getST(i, y).contains("TimeSpanRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_Interval, Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println("if Raw_Interval < XDR.XDR_Unsigned(Integer'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(y + " := Ada.Real_Time.Milliseconds(Integer(Raw_Interval));")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else if (symbolTable.getST(i, y).contains("TimeRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + y + ", Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println("if Raw_" + y + " < XDR.XDR_Unsigned(Integer'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Seconds := Ada.Real_Time.Seconds_Count(Raw_" + y + ");")
-          doIndentation()
-          out.println(y + " := Ada.Real_Time.Time_Of(Seconds, Ada.Real_Time.Time_Span_Zero);")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println("if Raw_" + sd + y + " in XDR.XDR_Unsigned(" + sp +
-            "'First) .. XDR.XDR_Unsigned(" + sp + "'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(sf + "." + y + " := " + sp + "(Raw_" + sd + y + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-      }
-    }
-    else {
-      var sd = ""
-      for (u <- l) {
-        if (u != "") {
-          if (u == l.head) {
-            sd = sd.concat(u + "_")
-          }
-          else {
-            sd = sd.concat(u)
-            if (u != l.last) {
-              sd = sd.concat("_")
-            }
-          }
-        }
-      }
-      var sf = ""
-      for (u <- l) {
-        if (u != "") {
-          if (u == l.head) {
-            sf = sf.concat(u + "(Y)")
-          }
-          else {
-            sf = sf.concat(u)
-            if (u != l.last) {
-              sf = sf.concat(".")
-            }
-          }
-        }
-      }
-
-      for (y <- symbolTable.getSType(i)) {
-        val sp = symbolTable.getStructuredTypeParent(i, y)
-        if (symbolTable.getST(i, y).contains("StructRep")) {
-          var ll = List[String]()
-          ll = l :+ y
-          processStructD(i, sp, ll, posFlag, stringFlag, 0)
-        }
-        else if (symbolTable.getST(i, y).contains("ArrayRep")) {
-          if (symbolTable.getArraySType(i, y) == "EnumRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("if Decode_Status = Success then")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            doIndentation()
-            out.println("if Raw_" + sd + y + " in " + sp +
-              "'Pos(" + sp + "'First) .. " +
-              sp + "'Pos(" + sp +
-              "'Last) then")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sf + "." + y + "(I)" + " := " + sp + "'Val(Raw_" + sd + y + ");")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("else")
-            indentationLevel += 1
-            doIndentation()
-            out.println("Decode_Status := Malformed;")
-            doIndentation()
-            out.println(sf + "." + y + "(I)" + " := " + sp + "'First;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          if (symbolTable.getArraySType(i, y) == "StringRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("if Decode_Status = Success then")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + "_Size, Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            doIndentation()
-            out.println("if Raw_" + sd + y +
-              "_Size in XDR.XDR_Unsigned(Natural'First) .. XDR.XDR_Unsigned(Natural'Last) then")
-            indentationLevel += 1
-            doIndentation()
-            out.println(y + "_Size := Natural(Raw_" + sd + y + "_Size);")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("else")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sd + y + "_Size := 0;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            doIndentation()
-            out.println("if " + sd + y + "_Size < 1 then")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Decode(Message.Payload, Position, " + sd + y + "(" + sd + y + "'First .. " + y +
-              "'First + (" + sd + y + "_Size - 1)), Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "BoolRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("if Decode_Status = Success then")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            doIndentation()
-            out.println(sd + "." + y + "(I)" + " := Boolean'Val(XDR.XDR_Boolean'Pos(Raw_" + i + "));")
-            doIndentation()
-            out.println("Decode_Status := Success;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "BoolRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("if Decode_Status = Success then")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            doIndentation()
-            out.println(sd + "." + y + "(I)" + " := " + sp + "'Val(XDR.XDR_Boolean'Pos(Raw_" + i + "));")
-            doIndentation()
-            out.println("Decode_Status := Success;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "UHyperRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("if Decode_Status = Success then")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            doIndentation()
-            out.println("if Raw_" + sd + y + " in XDR.XDR_Unsigned_Hyper(Lib.U_Hyper_Type" +
-              "'First) .. XDR.XDR_Unsigned_Hyper(Lib.U_Hyper_Type'Last) then")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sf + "." + y + "(I)" + " := Lib.U_Hyper_Type(Raw_" + sd + y + ");")
-            doIndentation()
-            out.println("Decode_Status := Success;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("else")
-            indentationLevel += 1
-            doIndentation()
-            out.println("Decode_Status := Malformed;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "HyperRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("if Decode_Status = Success then")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            doIndentation()
-            out.println("if Raw_" + sd + y + " in XDR.XDR_Hyper(Lib.Hyper_Type" +
-              "'First) .. XDR.XDR_Hyper(Lib.Hyper_Type'Last) then")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sf + "." + y + "(I)" + " := Lib.Hyper_Type(Raw_" + sd + y + ");")
-            doIndentation()
-            out.println("Decode_Status := Success;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("else")
-            indentationLevel += 1
-            doIndentation()
-            out.println("Decode_Status := Malformed;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "UHyperRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("if Decode_Status = Success then")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            doIndentation()
-            out.println("if Raw_" + sd + y + " in XDR.XDR_Unsigned_Hyper(" + sp +
-              "'First) .. XDR.XDR_Unsigned_Hyper(" + sp + "'Last) then")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sf + "." + y + "(I)" + " := " + sp + "(Raw_" + sd + y + ");")
-            doIndentation()
-            out.println("Decode_Status := Success;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("else")
-            indentationLevel += 1
-            doIndentation()
-            out.println("Decode_Status := Malformed;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "HyperRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("if Decode_Status = Success then")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            doIndentation()
-            out.println("if Raw_" + sd + y + " in XDR.XDR_Hyper(" + sp +
-              "'First) .. XDR.XDR_Hyper(" + sp + "'Last) then")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sf + "." + y + "(I)" + " := " + sp + "(Raw_" + sd + y + ");")
-            doIndentation()
-            out.println("Decode_Status := Success;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("else")
-            indentationLevel += 1
-            doIndentation()
-            out.println("Decode_Status := Malformed;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "DoubleRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("if Decode_Status = Success then")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            doIndentation()
-            out.println("if Raw_" + sd + y + " in XDR.XDR_Double(Double" +
-              "'First) .. XDR.XDR_Double(Double'Last) then")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sf + "." + y + "(I)" + " := Double(Raw_" + sd + y + ");")
-            doIndentation()
-            out.println("Decode_Status := Success;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("else")
-            indentationLevel += 1
-            doIndentation()
-            out.println("Decode_Status := Malformed;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "DoubleRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("if Decode_Status = Success then")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            doIndentation()
-            out.println("if Raw_" + sd + y + " in XDR.XDR_Double(" + sp +
-              "'First) .. XDR.XDR_Double(" + sp + "'Last) then")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sf + "." + y + "(I)" + " := " + sp + "(Raw_" + sd + y + ");")
-            doIndentation()
-            out.println("Decode_Status := Success;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("else")
-            indentationLevel += 1
-            doIndentation()
-            out.println("Decode_Status := Malformed;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "FloatRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("if Decode_Status = Success then")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            doIndentation()
-            out.println("if Raw_" + sd + y + " in XDR.XDR_Float(Float" +
-              "'First) .. XDR.XDR_Float(Float'Last) then")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sf + "." + y + "(I)" + " := Float(Raw_" + sd + y + ");")
-            doIndentation()
-            out.println("Decode_Status := Success;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("else")
-            indentationLevel += 1
-            doIndentation()
-            out.println("Decode_Status := Malformed;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "FloatRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("if Decode_Status = Success then")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            doIndentation()
-            out.println("if Raw_" + sd + y + " in XDR.XDR_Float(" + sp +
-              "'First) .. XDR.XDR_Float(" + sp + "'Last) then")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sf + "." + y + "(I)" + " := " + sp + "(Raw_" + sd + y + ");")
-            doIndentation()
-            out.println("Decode_Status := Success;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("else")
-            indentationLevel += 1
-            doIndentation()
-            out.println("Decode_Status := Malformed;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "UIntRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("if Decode_Status = Success then")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            doIndentation()
-            out.println("if Raw_" + sd + y + " in XDR.XDR_Unsigned(Lib.Quadruple_Octet'First) .. XDR.XDR_Unsigned(Lib.Quadruple_Octet'Last) then")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sf + "." + y + "(I)" + " := Lib.Quadruple_Octet(Raw_" + sd + y + ");")
-            doIndentation()
-            out.println("Decode_Status := Success;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("else")
-            indentationLevel += 1
-            doIndentation()
-            out.println("Decode_Status := Malformed;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "IntRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("if Decode_Status = Success then")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            doIndentation()
-            out.println("if Raw_" + sd + y + " in XDR.XDR_Integer(Integer'First) .. XDR.XDR_Integer(Integer'Last) then")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sf + "." + y + "(I)" + " := Integer(Raw_" + sd + y + ");")
-            doIndentation()
-            out.println("Decode_Status := Success;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("else")
-            indentationLevel += 1
-            doIndentation()
-            out.println("Decode_Status := Malformed;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "UIntRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("if Decode_Status = Success then")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            doIndentation()
-            out.println("if Raw_" + sd + y + " in XDR.XDR_Unsigned(Lib.Quadruple_Octet'First) .. XDR.XDR_Unsigned(Lib.Quadruple_Octet'Last) then")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sf + "." + y + "(I)" + " := " + sp + "(Raw_" + sd + y + ");")
-            doIndentation()
-            out.println("Decode_Status := Success;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("else")
-            indentationLevel += 1
-            doIndentation()
-            out.println("Decode_Status := Malformed;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "IntRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("if Decode_Status = Success then")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            doIndentation()
-            out.println("if Raw_" + sd + y + " in XDR.XDR_Integer(Integer'First) .. XDR.XDR_Integer(Integer'Last) then")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sf + "." + y + "(I)" + " := " + sp + "(Raw_" + sd + y + ");")
-            doIndentation()
-            out.println("Decode_Status := Success;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("else")
-            indentationLevel += 1
-            doIndentation()
-            out.println("Decode_Status := Malformed;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end if;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-        }
-        else if (symbolTable.getST(i, y).contains("EnumRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println("if Raw_" + sd + y + " in " + sp +
-            "'Pos(" + sp + "'First) .. " +
-            sp + "'Pos(" + sp +
-            "'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(sf + "." + y + " := " + sp + "'Val(Raw_" + sd + y + ");")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          doIndentation()
-          out.println(sf + "." + y + " := " + sp + "'First;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else if (symbolTable.getST(i, y).contains("StringRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + "_Size, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-          doIndentation()
-          out.println("if Raw_" + sd + y +
-            "_Size in XDR.XDR_Unsigned(Natural'First) .. XDR.XDR_Unsigned(Natural'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(y + "_Size := Natural(Raw_" + sd + y + "_Size);")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println(sd + y + "_Size := 0;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          doIndentation()
-          out.println("if " + sd + y + "_Size < 1 then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, " + y + "(" + y + "'First .. " + y +
-            "'First + (" + y + "_Size - 1)), Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else if (sp == "null" && symbolTable.getST(id, i).contains("BoolRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println(i + " := Boolean'Val(XDR.XDR_Boolean'Pos(Raw_" + i + "));")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else if (sp != "null" && symbolTable.getST(id, i).contains("BoolRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println(i + " := " + sp + "'Val(XDR.XDR_Boolean'Pos(Raw_" + i + "));")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("UHyperRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println("if Raw_" + sd + y + " in XDR.XDR_Unsigned_Hyper(Lib.U_Hyper_Type'First) .. XDR.XDR_Unsigned_Hyper(Lib.U_Hyper_Type'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(sf + "." + y + " := Lib.U_Hyper_Type(Raw_" + sd + y + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("HyperRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println("if Raw_" + sd + y + " in XDR.XDR_Hyper(Lib.Hyper_Type'First) .. XDR.XDR_Hyper(Lib.Hyper_Type'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(sf + "." + y + " := Lib.Hyper_Type(Raw_" + sd + y + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("UHyperRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println("if Raw_" + sd + y + " in XDR.XDR_Unsigned_Hyper(" + sp +
-            "'First) .. XDR.XDR_Unsigned_Hyper(" + sp + "'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(sf + "." + y + " := " + sp + "(Raw_" + sd + y + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("HyperRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println("if Raw_" + sd + y + " in XDR.XDR_Hyper(" + sp +
-            "'First) .. XDR.XDR_Hyper(" + sp + "'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(sf + "." + y + " := " + sp + "(Raw_" + sd + y + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("DoubleRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println("if Raw_" + sd + y + " in XDR.XDR_Double(Double'First) .. XDR.XDR_Double(Double'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(sf + "." + y + " := Double(Raw_" + sd + y + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("DoubleRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println("if Raw_" + sd + y + " in XDR.XDR_Double(" + sp +
-            "'First) .. XDR.XDR_Double(" + sp + "'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(sf + "." + y + " := " + sp + "(Raw_" + sd + y + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("FloatRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println("if Raw_" + sd + y + " in XDR.XDR_Float(Float'First) .. XDR.XDR_Float(Float'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(sf + "." + y + " := Float(Raw_" + sd + y + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("FloatRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println("if Raw_" + sd + y + " in XDR.XDR_Float(" + sp +
-            "'First) .. XDR.XDR_Float(" + sp + "'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(sf + "." + y + " := " + sp + "(Raw_" + sd + y + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("UIntRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println("if Raw_" + sd + y + " in XDR.XDR_Unsigned(Lib.Quadruple_Octet'First) .. XDR.XDR_Unsigned(Lib.Quadruple_Octet'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(sf + "." + y + " := Lib.Quadruple_Octet(Raw_" + sd + y + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("IntRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println("if Raw_" + sd + y + " in XDR.XDR_Integer(Integer'First) .. XDR.XDR_Integer(Integer'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(sf + "." + y + " := Integer(Raw_" + sd + y + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("UIntRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println("if Raw_" + sd + y + " in XDR.XDR_Unsigned(" + sp +
-            "'First) .. XDR.XDR_Unsigned(" + sp + "'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(sf + "." + y + " := " + sp + "(Raw_" + sd + y + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("IntRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println("if Raw_" + sd + y + " in XDR.XDR_Integer(" + sp +
-            "'First) .. XDR.XDR_Integer(" + sp + "'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(sf + "." + y + " := " + sp + "(Raw_" + sd + y + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else if (symbolTable.getST(i, y).contains("DataRep") || symbolTable.getST(i, y).contains("OpaqueRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_Size, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-          doIndentation()
-          out.println("if Raw_Size in XDR.XDR_Unsigned(CubedOS.Lib.Octet_Array_Count'First) .. XDR.XDR_Unsigned(CubedOS.Lib.Octet_Array_Count'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Size := CubedOS.Lib.Octet_Array_Count(Raw_Size);")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          doIndentation()
-          out.println("if Size < " + y + "'Length then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, " + y + "(" + y + "'First .. " + y + "'First + Size - 1), Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else if (symbolTable.getST(i, y).contains("TimeSpanRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_Interval, Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println("if Raw_Interval < XDR.XDR_Unsigned(Integer'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(y + " := Ada.Real_Time.Milliseconds(Integer(Raw_Interval));")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else if (symbolTable.getST(i, y).contains("TimeRep")) {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + y + ", Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println("if Raw_" + y + " < XDR.XDR_Unsigned(Integer'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Seconds := Ada.Real_Time.Seconds_Count(Raw_" + y + ");")
-          doIndentation()
-          out.println(y + " := Ada.Real_Time.Time_Of(Seconds, Ada.Real_Time.Time_Span_Zero);")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-        else {
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + sd + y + ", Last);")
-          if (posFlag == 1 && y == symbolTable.getSType(i).last && sd == stringFlag) {
-            //do Nothing!
-          }
-          else {
-            doIndentation()
-            out.println("Position := Last + 1;")
-          }
-          doIndentation()
-          out.println("if Raw_" + sd + y + " in XDR.XDR_Unsigned(" + sp +
-            "'First) .. XDR.XDR_Unsigned(" + sp + "'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(sf + "." + y + " := " + sp + "(Raw_" + sd + y + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-        }
-      }
-    }
-    null
-  }
-
-  //Process same variable names for encodes as decodes based on struct elements.
-  def processStructE(id: String, i: String, l: List[String], structNum: Int): Void = {
-    if (structNum == 0) {
-      for (y <- symbolTable.getSType(i)) {
-        val sp = symbolTable.getStructuredTypeParent(i, y)
-        var sf = ""
-        for (u <- l) {
-          if (u != "") {
-            sf = sf.concat(u)
-            if (u != l.last) {
-              sf = sf.concat(".")
-            }
-          }
-        }
-        if (symbolTable.getST(i, y).contains("StructRep")) {
-          var ll = List[String]()
-          ll = l :+ y
-          processStructE(i, sp, ll, 0)
-        }
-        else if (symbolTable.getST(i, y).contains("ArrayRep")) {
-          if (symbolTable.getArraySType(i, y) == "EnumRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Encode(XDR.XDR_Unsigned(" + sp + "'Pos(" + sf + "." + y + "(I))), Message.Payload, Position, Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (symbolTable.getArraySType(i, y) == "StringRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Encode(XDR.XDR_Unsigned(" + sf + "." + y + "(I)'Length), Message.Payload, Position, Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            doIndentation()
-            out.println("XDR.Encode(" + sf + "." + y + "(I), Message.Payload, Position, Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (symbolTable.getArraySType(i, y) == "DoubleRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Encode(XDR.XDR_Double(" + sf + "." + y + "(I)), Message.Payload, Position, Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (symbolTable.getArraySType(i, y) == "FloatRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Encode(XDR.XDR_Float(" + sf + "." + y + "(I)), Message.Payload, Position, Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (symbolTable.getArraySType(i, y) == "UHyperRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Encode(XDR.XDR_Unsigned_Hyper(" + sf + "." + y + "(I)), Message.Payload, Position, Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (symbolTable.getArraySType(i, y) == "HyperRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Encode(XDR.XDR_Hyper(" + sf + "." + y + "(I)), Message.Payload, Position, Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (symbolTable.getArraySType(i, y) == "BoolRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Encode(XDR.XDR_Boolean(" + sf + "." + y + "(I)), Message.Payload, Position, Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (symbolTable.getArraySType(i, y) == "IntRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Encode(XDR.XDR_Integer(" + sf + "." + y + "(I)), Message.Payload, Position, Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (symbolTable.getArraySType(i, y) == "UIntRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Encode(XDR.XDR_Unsigned(" + sf + "." + y + "(I)), Message.Payload, Position, Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-        }
-        else if (symbolTable.getST(i, y).contains("EnumRep")) {
-          doIndentation()
-          out.println("XDR.Encode(XDR.XDR_Unsigned(" + sp + "'Pos(" + sf + "." + y + ")), Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        else if (symbolTable.getST(i, y).contains("StringRep")) {
-          doIndentation()
-          out.println("XDR.Encode(XDR.XDR_Unsigned(" + id + "." + y + "'Length), Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-          doIndentation()
-          out.println("XDR.Encode(" + id + "." + y + ", Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        else if (symbolTable.getST(i, y).contains("DataRep")) {
-          doIndentation()
-          out.println("XDR.Encode(XDR.XDR_Unsigned(" + id + "." + y + "'Length), Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-          doIndentation()
-          out.println("XDR.Encode(" + id + "." + y + ", Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        else if (symbolTable.getST(i, y).contains("TimeSpanRep")) {
-          doIndentation()
-          out.println("XDR.Encode(XDR.XDR_Unsigned(1000*Interval), Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        else if (symbolTable.getST(i, y).contains("TimeRep")) {
-          doIndentation()
-          out.println("XDR.Encode(XDR.XDR_Unsigned(Seconds), Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        else if (symbolTable.getST(i, y).contains("UIntRep")) {
-          doIndentation()
-          out.println("XDR.Encode(XDR.XDR_Unsigned(" + sf + "." + y + "), Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        else if (symbolTable.getST(i, y).contains("IntRep")) {
-          doIndentation()
-          out.println("XDR.Encode(XDR.XDR_Integer(" + sf + "." + y + "), Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        else if (symbolTable.getST(i, y).contains("DoubleRep")) {
-          doIndentation()
-          out.println("XDR.Encode(XDR.XDR_Double(" + sf + "." + y + "), Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        else if (symbolTable.getST(i, y).contains("FloatRep")) {
-          doIndentation()
-          out.println("XDR.Encode(XDR.XDR_Float(" + sf + "." + y + "), Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        else if (symbolTable.getST(i, y).contains("UHyperRep")) {
-          doIndentation()
-          out.println("XDR.Encode(XDR.XDR_Unsigned_Hyper(" + sf + "." + y + "), Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        else if (symbolTable.getST(i, y).contains("HyperRep")) {
-          doIndentation()
-          out.println("XDR.Encode(XDR.XDR_Hyper(" + sf + "." + y + "), Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        else if (symbolTable.getST(i, y).contains("BoolRep")) {
-          doIndentation()
-          out.println("XDR.Encode(XDR.XDR_Boolean(" + sf + "." + y + "), Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-      }
-    }
-    else {
-      for (y <- symbolTable.getSType(i)) {
-        val sp = symbolTable.getStructuredTypeParent(i, y)
-        var sf = ""
-        for (u <- l) {
-          if (u != "") {
-            if (u == l.head) {
-              sf = sf.concat(u + "(Y)")
-            }
-            else {
-              sf = sf.concat(u)
-              if (u != l.last) {
-                sf = sf.concat(".")
-              }
-            }
-          }
-        }
-        if (symbolTable.getST(i, y).contains("StructRep")) {
-          var ll = List[String]()
-          ll = l.:+(y)
-          processStructE(i, sp, ll, 0)
-        }
-        else if (symbolTable.getST(i, y).contains("ArrayRep")) {
-          if (symbolTable.getArraySType(i, y) == "EnumRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Encode(XDR.XDR_Unsigned(" + sp + "'Pos(" + sf + "." + y + "(I))), Message.Payload, Position, Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (symbolTable.getArraySType(i, y) == "StringRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Encode(XDR.XDR_Unsigned(" + sf + "." + y + "(I)'Length), Message.Payload, Position, Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            doIndentation()
-            out.println("XDR.Encode(" + sf + "." + y + "(I), Message.Payload, Position, Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (symbolTable.getArraySType(i, y) == "DoubleRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Encode(XDR.XDR_Double(" + sf + "." + y + "(I)), Message.Payload, Position, Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (symbolTable.getArraySType(i, y) == "FloatRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Encode(XDR.XDR_Float(" + sf + "." + y + "(I)), Message.Payload, Position, Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (symbolTable.getArraySType(i, y) == "UHyperRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Encode(XDR.XDR_Unsigned_Hyper(" + sf + "." + y + "(I)), Message.Payload, Position, Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (symbolTable.getArraySType(i, y) == "HyperRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Encode(XDR.XDR_Hyper(" + sf + "." + y + "(I)), Message.Payload, Position, Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (symbolTable.getArraySType(i, y) == "BoolRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Encode(XDR.XDR_Boolean(" + sf + "." + y + "(I)), Message.Payload, Position, Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (symbolTable.getArraySType(i, y) == "IntRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Encode(XDR.XDR_Integer(" + sf + "." + y + "(I)), Message.Payload, Position, Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (symbolTable.getArraySType(i, y) == "UIntRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Encode(XDR.XDR_Unsigned(" + sf + "." + y + "(I)), Message.Payload, Position, Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-        }
-        else if (symbolTable.getST(i, y).contains("EnumRep")) {
-          doIndentation()
-          out.println("XDR.Encode(XDR.XDR_Unsigned(" + sp + "'Pos(" + sf + "." + y + ")), Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        else if (symbolTable.getST(i, y).contains("StringRep")) {
-          doIndentation()
-          out.println("XDR.Encode(XDR.XDR_Unsigned(" + id + "." + y + "'Length), Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-          doIndentation()
-          out.println("XDR.Encode(" + id + "." + y + ", Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        else if (symbolTable.getST(i, y).contains("DataRep")) {
-          doIndentation()
-          out.println("XDR.Encode(XDR.XDR_Unsigned(" + id + "." + y + "'Length), Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-          doIndentation()
-          out.println("XDR.Encode(" + id + "." + y + ", Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        else if (symbolTable.getST(i, y).contains("TimeSpanRep")) {
-          doIndentation()
-          out.println("XDR.Encode(XDR.XDR_Unsigned(1000*Interval), Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        else if (symbolTable.getST(i, y).contains("TimeRep")) {
-          doIndentation()
-          out.println("XDR.Encode(XDR.XDR_Unsigned(Seconds), Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        else if (symbolTable.getST(i, y).contains("UIntRep")) {
-          doIndentation()
-          out.println("XDR.Encode(XDR.XDR_Unsigned(" + sf + "." + y + "), Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        else if (symbolTable.getST(i, y).contains("IntRep")) {
-          doIndentation()
-          out.println("XDR.Encode(XDR.XDR_Integer(" + sf + "." + y + "), Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        else if (symbolTable.getST(i, y).contains("DoubleRep")) {
-          doIndentation()
-          out.println("XDR.Encode(XDR.XDR_Double(" + sf + "." + y + "), Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        else if (symbolTable.getST(i, y).contains("FloatRep")) {
-          doIndentation()
-          out.println("XDR.Encode(XDR.XDR_Float(" + sf + "." + y + "), Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        else if (symbolTable.getST(i, y).contains("UHyperRep")) {
-          doIndentation()
-          out.println("XDR.Encode(XDR.XDR_Unsigned_Hyper(" + sf + "." + y + "), Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        else if (symbolTable.getST(i, y).contains("HyperRep")) {
-          doIndentation()
-          out.println("XDR.Encode(XDR.XDR_Hyper(" + sf + "." + y + "), Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        else if (symbolTable.getST(i, y).contains("BoolRep")) {
-          doIndentation()
-          out.println("XDR.Encode(XDR.XDR_Boolean(" + sf + "." + y + "), Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-      }
-    }
-    null
-  }
-
-  //Process struct element variable initializations.
-  def processStructV(i: String, l: List[String], structNum: Int): Void = {
-    if (structNum == 0) {
-      var sd = ""
-      for (u <- l) {
-        if (u != "") {
-          sd = sd.concat(u)
-          sd = sd.concat(".")
-        }
-      }
-      for (y <- symbolTable.getSType(i)) {
-        val sp = symbolTable.getStructuredTypeParent(i, y)
-        if (symbolTable.getST(i, y).contains("StructRep")) {
-          var ll = List[String]()
-          ll = l :+ y
-          processStructV(sp, ll, 0)
-        }
-        else if (symbolTable.getST(i, y).contains("ArrayRep")) {
-          if (symbolTable.getArraySType(i, y) == "StringRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sd + y + "(I) := (others => ' ');")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "BoolRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sd + y + "(I) := Boolean'First;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "BoolRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sd + y + "(I) := " + sp + "'First;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "UHyperRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sd + y + "(I) := Lib.U_Hyper_Type(XDR.XDR_Unsigned_Hyper'First);")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "HyperRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sd + y + "(I) := Lib.Hyper(XDR.XDR_Hyper'First);")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "UHyperRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sd + y + "(I) := " + sp + "'First;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "HyperRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sd + y + "(I) := " + sp + "'First;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "DoubleRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sd + y + "(I) := Double'First;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "DoubleRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sd + y + "(I) := " + sp + "'First;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "FloatRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sd + y + "(I) := Float'First;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "FloatRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sd + y + "(I) := " + sp + "'First;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "UIntRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sd + y + "(I) := Lib.Quadruple_Octet(XDR.XDR_Unsigned'First);")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "IntRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sd + y + "(I) := Integer(XDR.XDR_Integer'First);")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "UIntRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sd + y + "(I) := " + sp + "'First;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "IntRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sd + y + "(I) := " + sp + "'First;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-        }
-        else if (symbolTable.getST(i, y).contains("StringRep")) {
-          doIndentation()
-          out.println(sd + y + " := (others => ' ');")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("BoolRep")) {
-          doIndentation()
-          out.println(sd + y + " := Boolean'First;")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("BoolRep")) {
-          doIndentation()
-          out.println(sd + y + " := " + sp + "'First;")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("UHyperRep")) {
-          doIndentation()
-          out.println(sd + y + " := Lib.U_Hyper_Type(XDR.XDR_Unsigned_Hyper'First);")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("HyperRep")) {
-          doIndentation()
-          out.println(sd + y + " := Lib.Hyper(XDR.XDR_Hyper'First);")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("UHyperRep")) {
-          doIndentation()
-          out.println(sd + y + " := " + sp + "'First;")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("HyperRep")) {
-          doIndentation()
-          out.println(sd + y + " := " + sp + "'First;")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("DoubleRep")) {
-          doIndentation()
-          out.println(sd + y + " := Double'First;")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("DoubleRep")) {
-          doIndentation()
-          out.println(sd + y + " := " + sp + "'First;")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("FloatRep")) {
-          doIndentation()
-          out.println(sd + y + " := Float'First;")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("FloatRep")) {
-          doIndentation()
-          out.println(sd + y + " := " + sp + "'First;")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("UIntRep")) {
-          doIndentation()
-          out.println(sd + y + " := Lib.Quadruple_Octet(XDR.XDR_Unsigned'First);")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("IntRep")) {
-          doIndentation()
-          out.println(sd + y + " := Integer(XDR.XDR_Integer'First);")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("UIntRep")) {
-          doIndentation()
-          out.println(sd + y + " := " + sp + "'First;")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("IntRep")) {
-          doIndentation()
-          out.println(sd + y + " := " + sp + "'First;")
-        }
-        else if (symbolTable.getST(i, y).contains("DataRep")) {
-          doIndentation()
-          out.println(sd + y + " := (others => 0);")
-          doIndentation()
-          out.println("Size := 0;")
-        }
-        else if (symbolTable.getST(i, y).contains("TimeSpanRep")) {
-          doIndentation()
-          out.println(y + " := Ada.Real_Time.Time_Span_First;")
-        }
-        else if (symbolTable.getST(i, y).contains("TimeRep")) {
-          doIndentation()
-          out.println(y + " := Ada.Real_Time.Time_First;")
-        }
-        else if (symbolTable.getST(i, y).contains("VoidRep")) {
-          //do nothing!
-        }
-        else {
-          doIndentation()
-          out.println(sd + y + " := " + sp + "'First;")
-        }
-      }
-    }
-    else {
-      var sd = ""
-      for (u <- l) {
-        if (u != "") {
-          if (u == l.head) {
-            sd = sd.concat(u + "(Y).")
-          }
-          else {
-            sd = sd.concat(u)
-            if (u != l.last) {
-              sd = sd.concat(".")
-            }
-          }
-        }
-      }
-      for (y <- symbolTable.getSType(i)) {
-        val sp = symbolTable.getStructuredTypeParent(i, y)
-        if (symbolTable.getST(i, y).contains("StructRep")) {
-          var ll = List[String]()
-          ll = l :+ y
-          processStructV(sp, ll, 0)
-        }
-        else if (symbolTable.getST(i, y).contains("ArrayRep")) {
-          if (symbolTable.getArraySType(i, y) == "StringRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sd + y + "(I) := (others => ' ');")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "BoolRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sd + y + "(I) := Boolean'First;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "BoolRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sd + y + "(I) := " + sp + "'First;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "UHyperRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sd + y + "(I) := Lib.U_Hyper_Type(XDR.XDR_Unsigned_Hyper'First);")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "HyperRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sd + y + "(I) := Lib.Hyper(XDR.XDR_Hyper'First);")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "UHyperRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sd + y + "(I) := " + sp + "'First;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "HyperRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sd + y + "(I) := " + sp + "'First;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "DoubleRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sd + y + "(I) := Double'First;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "DoubleRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sd + y + "(I) := " + sp + "'First;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "FloatRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sd + y + "(I) := Float'First;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "FloatRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sd + y + "(I) := " + sp + "'First;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "UIntRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sd + y + "(I) := Lib.Quadruple_Octet(XDR.XDR_Unsigned'First);")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp == "null" && symbolTable.getArraySType(i, y) == "IntRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sd + y + "(I) := Integer(XDR.XDR_Integer'First);")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "UIntRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sd + y + "(I) := " + sp + "'First;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (sp != "null" && symbolTable.getArraySType(i, y) == "IntRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(i, y) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println(sd + y + "(I) := " + sp + "'First;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-        }
-        else if (symbolTable.getST(i, y).contains("StringRep")) {
-          doIndentation()
-          out.println(sd + y + " := (others => ' ');")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("BoolRep")) {
-          doIndentation()
-          out.println(sd + y + " := Boolean'First;")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("BoolRep")) {
-          doIndentation()
-          out.println(sd + y + " := " + sp + "'First;")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("UHyperRep")) {
-          doIndentation()
-          out.println(sd + y + " := Lib.U_Hyper_Type(XDR.XDR_Unsigned_Hyper'First);")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("HyperRep")) {
-          doIndentation()
-          out.println(sd + y + " := Lib.Hyper(XDR.XDR_Hyper'First);")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("UHyperRep")) {
-          doIndentation()
-          out.println(sd + y + " := " + sp + "'First;")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("HyperRep")) {
-          doIndentation()
-          out.println(sd + y + " := " + sp + "'First;")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("DoubleRep")) {
-          doIndentation()
-          out.println(sd + y + " := Double'First;")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("DoubleRep")) {
-          doIndentation()
-          out.println(sd + y + " := " + sp + "'First;")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("FloatRep")) {
-          doIndentation()
-          out.println(sd + y + " := Float'First;")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("FloatRep")) {
-          doIndentation()
-          out.println(sd + y + " := " + sp + "'First;")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("UIntRep")) {
-          doIndentation()
-          out.println(sd + y + " := Lib.Quadruple_Octet(XDR.XDR_Unsigned'First);")
-        }
-        else if (sp == "null" && symbolTable.getST(i, y).contains("IntRep")) {
-          doIndentation()
-          out.println(sd + y + " := Integer(XDR.XDR_Integer'First);")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("UIntRep")) {
-          doIndentation()
-          out.println(sd + y + " := " + sp + "'First;")
-        }
-        else if (sp != "null" && symbolTable.getST(i, y).contains("IntRep")) {
-          doIndentation()
-          out.println(sd + y + " := " + sp + "'First;")
-        }
-        else if (symbolTable.getST(i, y).contains("DataRep")) {
-          doIndentation()
-          out.println(sd + y + " := (others => 0);")
-          doIndentation()
-          out.println("Size := 0;")
-        }
-        else if (symbolTable.getST(i, y).contains("TimeSpanRep")) {
-          doIndentation()
-          out.println(y + " := Ada.Real_Time.Time_Span_First;")
-        }
-        else if (symbolTable.getST(i, y).contains("TimeRep")) {
-          doIndentation()
-          out.println(y + " := Ada.Real_Time.Time_First;")
-        }
-        else if (symbolTable.getST(i, y).contains("VoidRep")) {
-          //do nothing!
-        }
-        else {
-          doIndentation()
-          out.println(sd + y + " := " + sp + "'First;")
-        }
-      }
-    }
-    null
-  }
-
-  //Encode sending.
-  def doEncode(ctx: MXDRParser.Struct_bodyContext, id: String, arrowFlag: Int): Void = {
-    val encodeString = "_Encode"
-    doIndentation()
-    out.println("function " + id + encodeString)
-    indentationLevel += 1
-    doIndentation()
-    if (arrowFlag == 0) {
-      out.println("(Sender_Domain : Domain_ID_Type;")
-      doIndentation()
-      out.println("Sender : Module_ID_Type;")
-      doIndentation()
-      out.println("Request_ID : Request_ID_Type;")
-    }
-    else if (arrowFlag == 1) {
-      out.println("(Receiver_Domain : Domain_ID_Type;")
-      doIndentation()
-      out.println("Receiver : Module_ID_Type;")
-      doIndentation()
-      out.println("Request_ID : Request_ID_Type;")
-    }
-    val structStuff = ctx.declaration().size()
-    for (i <- 0 until structStuff) {
-      if (ctx.declaration(i).children.contains(ctx.declaration(i).VOID)) {
-        doIndentation()
-        out.println("--TODO")
-      }
-      else {
-        val t = ctx.declaration(i).children.get(0).getText
-        val idd = ctx.declaration(i).IDENTIFIER.getText
-        doIndentation()
-        if (t == "opaque") {
-          out.println(idd + " : CubedOS.Lib.Octet_Array;")
-        }
-        else if (t == "int") {
-          out.println(idd + " : Integer;")
-        }
-        else if (t == "unsignedhyper") {
-          out.println(id + " : Lib.U_Hyper_Type;")
-        }
-        else if (t == "unsignedint") {
-          out.println(id + " : Lib.Quadruple_Octet;")
-        }
-        else if (t == "double") {
-          out.println(idd + " : Double;")
-        }
-        else if (t == "float") {
-          out.println(idd + " : Float;")
-        }
-        else if (t == "hyper") {
-          out.println(idd + " : Lib.Hyper_Type;")
-        }
-        else if (t == "bool") {
-          out.println(idd + " : Boolean;")
-        }
-        else if (t == "string") {
-          out.println(idd + " : String;")
-        }
-        else {
-          out.println(idd + " : " + ctx.declaration(i).type_specifier.getText + ";")
-        }
-      }
-    }
-    doIndentation()
-    out.println("Priority : System.Priority := System.Default_Priority) return Message_Record")
-    indentationLevel -= 1
-    doIndentation()
-    out.println("is")
-    indentationLevel += 1
-    if (arrowFlag == 0) {
-      doIndentation()
-      out.println("Message : Message_Record;")
-    }
-    else if (arrowFlag == 1) {
-      doIndentation()
-      out.println("Message : Message_Record := Make_Empty_Message(")
-      indentationLevel += 1
-      doIndentation()
-      out.println("Sender_Domain   => Domain_ID,")
-      doIndentation()
-      out.println("Receiver_Domain => Receiver_Domain,")
-      doIndentation()
-      out.println("Sender     => ID,")
-      doIndentation()
-      out.println("Receiver   => Receiver,")
-      doIndentation()
-      out.println("Request_ID   => Request_ID,")
-      doIndentation()
-      out.println("Message_ID => Message_Type'Pos(" + id + "),")
-      doIndentation()
-      out.println("Priority   => Priority);")
-      indentationLevel -= 1
-    }
-    doIndentation()
-    out.println("Position : Data_Index_Type;")
-    if (ctx.declaration(0).getText != "void") {
-      doIndentation()
-      out.println("Last : Data_Index_Type;")
-    }
-    for (i <- symbolTable.getSType(id)) {
-      if (symbolTable.getST(id, i).contains("TimeSpanRep")) {
-        doIndentation()
-        out.println("Interval : constant Duration := Ada.Real_Time.To_Duration(" + i + ");")
-      }
-      else if (symbolTable.getST(id, i).contains("TimeRep")) {
-        doIndentation()
-        out.println("Seconds  : Ada.Real_Time.Seconds_Count;")
-        doIndentation()
-        out.println("Fraction : Ada.Real_Time.Time_Span;")
-      }
-    }
-    indentationLevel -= 1
-    doIndentation()
-    out.println("begin")
-    indentationLevel += 1
-    if (arrowFlag == 0) {
-      doIndentation()
-      out.println("Message := Make_Empty_Message(")
-      indentationLevel += 1
-      doIndentation()
-      out.println("Sender_Domain   => Sender_Domain,")
-      doIndentation()
-      out.println("Receiver_Domain => Domain_ID,")
-      doIndentation()
-      out.println("Sender     => Sender,")
-      doIndentation()
-      out.println("Receiver   => ID,")
-      doIndentation()
-      out.println("Request_ID   => Request_ID,")
-      doIndentation()
-      out.println("Message_ID => Message_Type'Pos(" + id + "),")
-      doIndentation()
-      out.println("Priority   => Priority);")
-      indentationLevel -= 1
-    }
-    else if (arrowFlag == 1) {
-      //Do nothing!
-    }
-    for (i <- symbolTable.getSType(id)) {
-      if (symbolTable.getST(id, i).contains("TimeSpanRep")) {
-        doIndentation()
-        out.println("")
-      }
-      else if (symbolTable.getST(id, i).contains("TimeRep")) {
-        doIndentation()
-        out.println("Ada.Real_Time.Split(" + i + ", Seconds, Fraction);")
-        out.println("")
-      }
-    }
-    doIndentation()
-    out.println("Position := 0;")
-    for (i <- symbolTable.getSType(id)) {
-      if (symbolTable.getST(id, i).contains("VoidRep")) {
-        doIndentation()
-        out.println("--TODO")
-      }
-      else {
-        var s = symbolTable.getStructuredTypeParent(id, i)
-        if (symbolTable.getST(id, i).contains("StructRep")) {
-          var l = List[String]()
-          l = l :+ i
-          processStructE(id, s, l, 0)
-        }
-        else if (symbolTable.getST(id, i).contains("ArrayRep")) {
-          if (symbolTable.getArraySType(id, i) == "StructRep") {
-            var l = List[String]()
-            l = l :+ i
-            val structNum = symbolTable.getArraySSize(id, i).toInt
-            doIndentation()
-            out.println("for Y in Integer range 0 .. " + symbolTable.getArraySSize(id, i).toInt + " loop")
-            indentationLevel += 1
-            processStructE(id, s, l, structNum)
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (symbolTable.getArraySType(id, i) == "EnumRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Encode(XDR.XDR_Unsigned(" + s + "'Pos(" + i + "(I)), Message.Payload, Position, Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (symbolTable.getArraySType(id, i) == "StringRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Encode(XDR.XDR_Unsigned(" + i + "(I)'Length), Message.Payload, Position, Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            doIndentation()
-            out.println("XDR.Encode(" + i + "(I), Message.Payload, Position, Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (symbolTable.getArraySType(id, i) == "UHyperRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Encode(XDR.XDR_Unsigned_Hyper(" + i + "(I), Message.Payload, Position, Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (symbolTable.getArraySType(id, i) == "HyperRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Encode(XDR.XDR_Hyper(" + i + "(I), Message.Payload, Position, Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (symbolTable.getStructuredTypeParent(id, i) == "null" && symbolTable.getArraySType(id, i) == "BoolRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Encode(XDR.XDR_Boolean'Val(Boolean'Pos(" + i + "(I)), Message.Payload, Position, Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (symbolTable.getStructuredTypeParent(id, i) != "null" && symbolTable.getArraySType(id, i) == "BoolRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Encode(XDR.XDR_Boolean'Val(" + symbolTable.getStructuredTypeParent(id, i) + "'Pos(" + i + "(I)), Message.Payload, Position, Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (symbolTable.getArraySType(id, i) == "UIntRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Encode(XDR.XDR_Unsigned(" + i + "(I)), Message.Payload, Position, Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (symbolTable.getArraySType(id, i) == "IntRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Encode(XDR.XDR_Integer(" + i + "(I)), Message.Payload, Position, Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (symbolTable.getArraySType(id, i) == "DoubleRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Encode(XDR.XDR_Double(" + i + "(I), Message.Payload, Position, Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else if (symbolTable.getArraySType(id, i) == "FloatRep") {
-            doIndentation()
-            out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-            indentationLevel += 1
-            doIndentation()
-            out.println("XDR.Encode(XDR.XDR_Float(" + i + "(I), Message.Payload, Position, Last);")
-            doIndentation()
-            out.println("Position := Last + 1;")
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-        }
-        else if (symbolTable.getST(id, i).contains("EnumRep")) {
-          doIndentation()
-          out.println("XDR.Encode(XDR.XDR_Unsigned(" + s + "'Pos(" + i + ")), Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        else if (symbolTable.getST(id, i).contains("StringRep")) {
-          doIndentation()
-          out.println("XDR.Encode(XDR.XDR_Unsigned(" + i + "'Length), Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-          doIndentation()
-          out.println("XDR.Encode(" + i + ", Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        else if (symbolTable.getST(id, i).contains("DataRep")) {
-          doIndentation()
-          out.println("XDR.Encode(XDR.XDR_Unsigned(" + i + "'Length), Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-          doIndentation()
-          out.println("XDR.Encode(" + i + ", Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        else if (symbolTable.getST(id, i).contains("UHyperRep")) {
-          doIndentation()
-          out.println("XDR.Encode(XDR.XDR_Unsigned_Hyper(" + i + "), Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        else if (symbolTable.getST(id, i).contains("HyperRep")) {
-          doIndentation()
-          out.println("XDR.Encode(XDR.XDR_Hyper(" + i + "), Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        else if (symbolTable.getStructuredTypeParent(id, i) == "null" && symbolTable.getST(id, i).contains("BoolRep")) {
-          doIndentation()
-          out.println("XDR.Encode(XDR.XDR_Boolean'Val(Boolean'Pos(" + i + ")), Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        else if (symbolTable.getStructuredTypeParent(id, i) != "null" && symbolTable.getST(id, i).contains("BoolRep")) {
-          doIndentation()
-          out.println("XDR.Encode(XDR.XDR_Boolean'Val(" + symbolTable.getStructuredTypeParent(id, i) + "'Pos(" + i + ")), Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        else if (symbolTable.getST(id, i).contains("UIntRep")) {
-          doIndentation()
-          out.println("XDR.Encode(XDR.XDR_Unsigned(" + i + "), Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        else if (symbolTable.getST(id, i).contains("IntRep")) {
-          doIndentation()
-          out.println("XDR.Encode(XDR.XDR_Integer(" + i + "), Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        else if (symbolTable.getST(id, i).contains("DoubleRep")) {
-          doIndentation()
-          out.println("XDR.Encode(XDR.XDR_Double(" + i + "), Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        else if (symbolTable.getST(id, i).contains("FloatRep")) {
-          doIndentation()
-          out.println("XDR.Encode(XDR.XDR_Float(" + i + "), Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        else if (symbolTable.getST(id, i).contains("TimeSpanRep")) {
-          doIndentation()
-          out.println("XDR.Encode(XDR.XDR_Unsigned(1000*Interval), Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        else if (symbolTable.getST(id, i).contains("TimeRep")) {
-          doIndentation()
-          out.println("XDR.Encode(XDR.XDR_Unsigned(Seconds), Message.Payload, Position, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-      }
-    }
-    doIndentation()
-    out.println("Message.Size := Position;")
-    doIndentation()
-    out.println("return Message;")
-    indentationLevel -= 1
-    doIndentation()
-    out.println("end " + id + encodeString + ";")
-    out.println("")
-    null
-  }
-
-  //Decode sending.
-  def doDecode(ctx: MXDRParser.Struct_bodyContext, id: String, arrowFlag: Int): Void = {
-    val decodeString = "_Decode"
-    doIndentation()
-    out.println("procedure " + id + decodeString)
-    indentationLevel += 1
-    doIndentation()
-    out.println("(Message : in  Message_Record;")
-    val structStuff = ctx.declaration().size()
-    for (i <- 0 until structStuff) {
-      doIndentation()
-      val t = symbolTable.getST(id, ctx.declaration(i).IDENTIFIER.getText)
-      val tt = ctx.declaration(i).children.get(0).getText
-      val idd = ctx.declaration(i).IDENTIFIER.getText
-      val ts = if (ctx.declaration(i).children.contains(ctx.declaration(i).type_specifier)) {
-        ctx.declaration(i).type_specifier.getText
-      }
-      if (symbolTable.getTypeNames.exists(_ == ts)) {
-        out.println(idd + " : out " + ts + ";")
-      }
-      else {
-        if (t.contains("StringRep")) {
-          out.println(idd + " : out String;")
-          doIndentation()
-          out.println(idd + "_Size : out " + "Natural;")
-        }
-        else if (t.contains("DataRep")) {
-          out.println(idd + " : out CubedOS.Lib.Octet_Array;")
-          doIndentation()
-          out.println("Size : out CubedOS.Lib.Octet_Array_Count;")
-        }
-        else {
-          if (tt == "opaque") {
-            out.println(idd + " : out CubedOS.Lib.Octet_Array;")
-            doIndentation()
-            out.println("Size : out CubedOS.Lib.Octet_Array_Count;")
-          }
-          else if (tt == "int") {
-            out.println(idd + " : out Integer;")
-          }
-          else if (tt == "unsignedhyper") {
-            out.println(id + " : out Lib.U_Hyper_Type;")
-          }
-          else if (tt == "unsignedint") {
-            out.println(id + " : out Lib.Quadruple_Octet;")
-          }
-          else if (tt == "double") {
-            out.println(idd + " : out Double;")
-          }
-          else if (tt == "float") {
-            out.println(idd + " : out Float;")
-          }
-          else if (tt == "hyper") {
-            out.println(idd + " : out Lib.Hyper_Type;")
-          }
-          else if (tt == "bool") {
-            out.println(idd + " : out Boolean;")
-          }
-          else if (t == "string") {
-            out.println(idd + " : String;")
-          }
-          else {
-            out.println(idd + " : out " + ctx.declaration(i).type_specifier.getText + ";")
-          }
-        }
-      }
-    }
-    doIndentation()
-    out.println("Decode_Status : out Message_Status_Type)")
-    indentationLevel -= 1
-    doIndentation()
-    out.println("is")
-    indentationLevel += 1
-    doIndentation()
-    out.println("Position : Data_Index_Type;")
-    for (i <- symbolTable.getSType(id)) {
-      var s = symbolTable.getStructuredTypeParent(id, i)
-      if (symbolTable.getST(id, i).contains("StructRep")) {
-        var l = List[String]()
-        l = l :+ i
-        processStructDF(s, l, 0)
-      }
-      else if (symbolTable.getST(id, i).contains("ArrayRep")) {
-        if (symbolTable.getArraySType(id, i) == "StructRep") {
-          var l = List[String]()
-          l = l :+ i
-          val structNum = symbolTable.getArraySSize(id, i).toInt
-          processStructDF(s, l, structNum)
-        }
-        else if (symbolTable.getArraySType(id, i) == "EnumRep") {
-          doIndentation()
-          out.println("Raw_" + i + " : XDR.XDR_Unsigned;")
-        }
-        else if (symbolTable.getArraySType(id, i) == "StringRep") {
-          doIndentation()
-          out.println("Raw_" + i + "_Size : XDR.XDR_Unsigned;")
-        }
-        else if (s == "null" && symbolTable.getArraySType(id, i) == "BoolRep") {
-          doIndentation()
-          out.println("Raw_" + i + "   : XDR.XDR_Boolean;")
-        }
-        else if (s != "null" && symbolTable.getArraySType(id, i) == "BoolRep") {
-          doIndentation()
-          out.println("Raw_" + i + "   : XDR.XDR_Boolean;")
-        }
-        else if (s == "null" && symbolTable.getArraySType(id, i) == "UHyperRep") {
-          doIndentation()
-          out.println("Raw_" + i + "   : XDR.XDR_Unsigned_Hyper;")
-        }
-        else if (s == "null" && symbolTable.getArraySType(id, i) == "HyperRep") {
-          doIndentation()
-          out.println("Raw_" + i + "   : XDR.XDR_Hyper;")
-        }
-        else if (s != "null" && symbolTable.getArraySType(id, i) == "UHyperRep") {
-          doIndentation()
-          out.println("Raw_" + i + "   : XDR.XDR_Unsigned_Hyper;")
-        }
-        else if (s != "null" && symbolTable.getArraySType(id, i) == "HyperRep") {
-          doIndentation()
-          out.println("Raw_" + i + "   : XDR.XDR_Hyper;")
-        }
-        else if (s == "null" && symbolTable.getArraySType(id, i) == "DoubleRep") {
-          doIndentation()
-          out.println("Raw_" + i + "   : XDR.XDR_Double;")
-        }
-        else if (s != "null" && symbolTable.getArraySType(id, i) == "DoubleRep") {
-          doIndentation()
-          out.println("Raw_" + i + "   : XDR.XDR_Double;")
-        }
-        else if (s == "null" && symbolTable.getArraySType(id, i) == "FloatRep") {
-          doIndentation()
-          out.println("Raw_" + i + "   : XDR.XDR_Float;")
-        }
-        else if (s != "null" && symbolTable.getArraySType(id, i) == "FloatRep") {
-          doIndentation()
-          out.println("Raw_" + i + "   : XDR.XDR_Float;")
-        }
-        else if (s == "null" && symbolTable.getArraySType(id, i) == "UIntRep") {
-          doIndentation()
-          out.println("Raw_" + i + "   : XDR.XDR_Unsigned;")
-        }
-        else if (s == "null" && symbolTable.getArraySType(id, i) == "IntRep") {
-          doIndentation()
-          out.println("Raw_" + i + "   : XDR.XDR_Integer;")
-        }
-        else if (s != "null" && symbolTable.getArraySType(id, i) == "UIntRep") {
-          doIndentation()
-          out.println("Raw_" + i + "   : XDR.XDR_Unsigned;")
-        }
-        else if (s != "null" && symbolTable.getArraySType(id, i) == "IntRep") {
-          doIndentation()
-          out.println("Raw_" + i + "   : XDR.XDR_Integer;")
-        }
-      }
-      else if (symbolTable.getST(id, i).contains("EnumRep")) {
-        doIndentation()
-        out.println("Raw_" + i + " : XDR.XDR_Unsigned;")
-      }
-      else if (symbolTable.getST(id, i).contains("StringRep")) {
-        doIndentation()
-        out.println("Raw_" + i + "_Size : XDR.XDR_Unsigned;")
-      }
-      else if (symbolTable.getST(id, i).contains("DataRep")) {
-        doIndentation()
-        out.println("Raw_Size : XDR.XDR_Unsigned;")
-      }
-      else if (s == "null" && symbolTable.getST(id, i).contains("BoolRep")) {
-        doIndentation()
-        out.println("Raw_" + i + "   : XDR.XDR_Boolean;")
-      }
-      else if (s != "null" && symbolTable.getST(id, i).contains("BoolRep")) {
-        doIndentation()
-        out.println("Raw_" + i + "   : XDR.XDR_Boolean;")
-      }
-      else if (s == "null" && symbolTable.getST(id, i).contains("UHyperRep")) {
-        doIndentation()
-        out.println("Raw_" + i + "   : XDR.XDR_Unsigned_Hyper;")
-      }
-      else if (s == "null" && symbolTable.getST(id, i).contains("HyperRep")) {
-        doIndentation()
-        out.println("Raw_" + i + "   : XDR.XDR_Hyper;")
-      }
-      else if (s != "null" && symbolTable.getST(id, i).contains("UHyperRep")) {
-        doIndentation()
-        out.println("Raw_" + i + "   : XDR.XDR_Unsigned_Hyper;")
-      }
-      else if (s != "null" && symbolTable.getST(id, i).contains("HyperRep")) {
-        doIndentation()
-        out.println("Raw_" + i + "   : XDR.XDR_Hyper;")
-      }
-      else if (s == "null" && symbolTable.getST(id, i).contains("DoubleRep")) {
-        doIndentation()
-        out.println("Raw_" + i + "   : XDR.XDR_Double;")
-      }
-      else if (s != "null" && symbolTable.getST(id, i).contains("DoubleRep")) {
-        doIndentation()
-        out.println("Raw_" + i + "   : XDR.XDR_Double;")
-      }
-      else if (s == "null" && symbolTable.getST(id, i).contains("FloatRep")) {
-        doIndentation()
-        out.println("Raw_" + i + "   : XDR.XDR_Float;")
-      }
-      else if (s != "null" && symbolTable.getST(id, i).contains("FloatRep")) {
-        doIndentation()
-        out.println("Raw_" + i + "   : XDR.XDR_Float;")
-      }
-      else if (s == "null" && symbolTable.getST(id, i).contains("UIntRep")) {
-        doIndentation()
-        out.println("Raw_" + i + "   : XDR.XDR_Unsigned;")
-      }
-      else if (s == "null" && symbolTable.getST(id, i).contains("IntRep")) {
-        doIndentation()
-        out.println("Raw_" + i + "   : XDR.XDR_Integer;")
-      }
-      else if (s != "null" && symbolTable.getST(id, i).contains("UIntRep")) {
-        doIndentation()
-        out.println("Raw_" + i + "   : XDR.XDR_Unsigned;")
-      }
-      else if (s != "null" && symbolTable.getST(id, i).contains("IntRep")) {
-        doIndentation()
-        out.println("Raw_" + i + "   : XDR.XDR_Integer;")
-      }
-      else if (symbolTable.getST(id, i).contains("TimeSpanRep")) {
-        doIndentation()
-        out.println("Raw_Interval  : XDR.XDR_Unsigned;")
-      }
-      else if (symbolTable.getST(id, i).contains("TimeRep")) {
-        doIndentation()
-        out.println("Seconds : Ada.Real_Time.Seconds_Count;")
-        doIndentation()
-        out.println("Raw_" + i + "   : XDR.XDR_Unsigned;")
-      }
-      else {
-        doIndentation()
-        out.println("Raw_" + i + "   : XDR.XDR_Unsigned;")
-      }
-    }
-    doIndentation()
-    out.println("Last : Data_Index_Type;")
-    indentationLevel -= 1
-    doIndentation()
-    out.println("begin")
-    indentationLevel += 1
-    doIndentation()
-    out.println("pragma Warnings")
-    indentationLevel += 1
-    doIndentation()
-    out.println("""(Off, "unused assignment to ""Last""" + """""""" + """"""" + """, Reason => "The last value of Last is not needed");""")
-    indentationLevel -= 1
-    doIndentation()
-    out.println("Decode_Status := Success;")
-    for (i <- symbolTable.getSType(id)) {
-      var s = symbolTable.getStructuredTypeParent(id, i)
-      if (symbolTable.getST(id, i).contains("StructRep")) {
-        var l = List[String]()
-        l = l :+ i
-        processStructV(s, l, 0)
-      }
-      else if (symbolTable.getST(id, i).contains("ArrayRep")) {
-        if (symbolTable.getArraySType(id, i) == "StructRep") {
-          var l = List[String]()
-          l = l :+ i
-          val structNum = symbolTable.getArraySSize(id, i).toInt
-          doIndentation()
-          out.println("for Y in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-          indentationLevel += 1
-          processStructV(s, l, structNum)
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end loop;")
-        }
-        else if (symbolTable.getArraySType(id, i) == "StringRep") {
-          doIndentation()
-          out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-          indentationLevel += 1
-          doIndentation()
-          out.println(i + "(I) := (others => ' ');")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end loop;")
-        }
-        else if (s == "null" && symbolTable.getArraySType(id, i) == "BoolRep") {
-          doIndentation()
-          out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-          indentationLevel += 1
-          doIndentation()
-          out.println(i + "(I) := Boolean'First;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end loop;")
-        }
-        else if (s != "null" && symbolTable.getArraySType(id, i) == "BoolRep") {
-          doIndentation()
-          out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-          indentationLevel += 1
-          doIndentation()
-          out.println(i + "(I) := " + s + "'First;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end loop;")
-        }
-        else if (s == "null" && symbolTable.getArraySType(id, i) == "UHyperRep") {
-          doIndentation()
-          out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-          indentationLevel += 1
-          doIndentation()
-          out.println(i + "(I) := Lib.U_Hyper_Type(XDR.XDR_Unsigned_Hyper'First);")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end loop;")
-        }
-        else if (s == "null" && symbolTable.getArraySType(id, i) == "HyperRep") {
-          doIndentation()
-          out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-          indentationLevel += 1
-          doIndentation()
-          out.println(i + "(I) := Lib.Hyper_Type(XDR.XDR_Hyper'First);")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end loop;")
-        }
-        else if (s != "null" && symbolTable.getArraySType(id, i) == "UHyperRep") {
-          doIndentation()
-          out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-          indentationLevel += 1
-          doIndentation()
-          out.println(i + "(I) := " + s + "'First;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end loop;")
-        }
-        else if (s != "null" && symbolTable.getArraySType(id, i) == "HyperRep") {
-          doIndentation()
-          out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-          indentationLevel += 1
-          doIndentation()
-          out.println(i + "(I) := " + s + "'First;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end loop;")
-        }
-        else if (s == "null" && symbolTable.getArraySType(id, i) == "DoubleRep") {
-          doIndentation()
-          out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-          indentationLevel += 1
-          doIndentation()
-          out.println(i + "(I) := Double'First;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end loop;")
-        }
-        else if (s != "null" && symbolTable.getArraySType(id, i) == "DoubleRep") {
-          doIndentation()
-          out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-          indentationLevel += 1
-          doIndentation()
-          out.println(i + "(I) := " + s + "'First;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end loop;")
-        }
-        else if (s == "null" && symbolTable.getArraySType(id, i) == "FloatRep") {
-          doIndentation()
-          out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-          indentationLevel += 1
-          doIndentation()
-          out.println(i + "(I) := Float'First;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end loop;")
-        }
-        else if (s != "null" && symbolTable.getArraySType(id, i) == "FloatRep") {
-          doIndentation()
-          out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-          indentationLevel += 1
-          doIndentation()
-          out.println(i + "(I) := " + s + "'First;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end loop;")
-        }
-        else if (s == "null" && symbolTable.getArraySType(id, i) == "UIntRep") {
-          doIndentation()
-          out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-          indentationLevel += 1
-          doIndentation()
-          out.println(i + "(I) := Lib.Quadruple_Octet(XDR.XDR_Unsigned'First);")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end loop;")
-        }
-        else if (s == "null" && symbolTable.getArraySType(id, i) == "IntRep") {
-          doIndentation()
-          out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-          indentationLevel += 1
-          doIndentation()
-          out.println(i + "(I) := Integer(XDR.XDR_Integer'First);")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end loop;")
-        }
-        else if (s != "null" && symbolTable.getArraySType(id, i) == "UIntRep") {
-          doIndentation()
-          out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-          indentationLevel += 1
-          doIndentation()
-          out.println(i + "(I) := " + s + "'First;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end loop;")
-        }
-        else if (s != "null" && symbolTable.getArraySType(id, i) == "IntRep") {
-          doIndentation()
-          out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-          indentationLevel += 1
-          doIndentation()
-          out.println(i + "(I) := " + s + "'First;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end loop;")
-        }
-      }
-      else if (symbolTable.getST(id, i).contains("StringRep")) {
-        doIndentation()
-        out.println(i + " := (others => ' ');")
-      }
-      else if (s != "null" && symbolTable.getST(id, i).contains("EnumRep")) {
-        // The EnumRep case was added by pchapin... Do we need a case for s == "null"?
-        doIndentation()
-        out.println(i + " := " + s + "'First;")
-      }
-      else if (s == "null" && symbolTable.getST(id, i).contains("BoolRep")) {
-        doIndentation()
-        out.println(i + " := Boolean'First;")
-      }
-      else if (s != "null" && symbolTable.getST(id, i).contains("BoolRep")) {
-        doIndentation()
-        out.println(i + " := " + s + "'First;")
-      }
-      else if (s == "null" && symbolTable.getST(id, i).contains("UHyperRep")) {
-        doIndentation()
-        out.println(i + " := Lib.U_Hyper_Type(XDR.XDR_Unsigned_Hyper'First);")
-      }
-      else if (s == "null" && symbolTable.getST(id, i).contains("HyperRep")) {
-        doIndentation()
-        out.println(i + " := Lib.Hyper_Type(XDR.XDR_Hyper'First);")
-      }
-      else if (s != "null" && symbolTable.getST(id, i).contains("UHyperRep")) {
-        doIndentation()
-        out.println(i + " := " + s + "'First;")
-      }
-      else if (s != "null" && symbolTable.getST(id, i).contains("HyperRep")) {
-        doIndentation()
-        out.println(i + " := " + s + "'First;")
-      }
-      else if (s == "null" && symbolTable.getST(id, i).contains("DoubleRep")) {
-        doIndentation()
-        out.println(i + " := Double'First;")
-      }
-      else if (s != "null" && symbolTable.getST(id, i).contains("DoubleRep")) {
-        doIndentation()
-        out.println(i + " := " + s + "'First;")
-      }
-      else if (s == "null" && symbolTable.getST(id, i).contains("FloatRep")) {
-        doIndentation()
-        out.println(i + " := Float'First;")
-      }
-      else if (s != "null" && symbolTable.getST(id, i).contains("FloatRep")) {
-        doIndentation()
-        out.println(i + " := " + s + "'First;")
-      }
-      else if (s == "null" && symbolTable.getST(id, i).contains("UIntRep")) {
-        doIndentation()
-        out.println(i + " := Lib.Quadruple_Octet(XDR.XDR_Unsigned'First);")
-      }
-      else if (s == "null" && symbolTable.getST(id, i).contains("IntRep")) {
-        doIndentation()
-        out.println(i + " := Integer(XDR.XDR_Integer'First);")
-      }
-      else if (s != "null" && symbolTable.getST(id, i).contains("UIntRep")) {
-        doIndentation()
-        out.println(i + " := " + s + "'First;")
-      }
-      else if (s != "null" && symbolTable.getST(id, i).contains("IntRep")) {
-        doIndentation()
-        out.println(i + " := " + s + "'First;")
-      }
-      else if (symbolTable.getST(id, i).contains("DataRep")) {
-        doIndentation()
-        out.println(i + " := (others => 0);")
-        doIndentation()
-        out.println("Size := 0;")
-      }
-      else if (symbolTable.getST(id, i).contains("TimeSpanRep")) {
-        doIndentation()
-        out.println(i + " := Ada.Real_Time.Time_Span_First;")
-      }
-      else if (symbolTable.getST(id, i).contains("TimeRep")) {
-        doIndentation()
-        out.println(i + " := Ada.Real_Time.Time_First;")
-      }
-    }
-    doIndentation()
-    out.println("Position := 0;")
-    val num = ctx.declaration.size()
-    for (i <- symbolTable.getSType(id)) {
-      var s = symbolTable.getStructuredTypeParent(id, i)
-      if (symbolTable.getST(id, i).contains("StructRep")) {
-        var l = List[String]()
-        l = l :+ i
-        var ss = List[String]()
-        ss = ss :+ i
-        val sL = digEndingStructs(s, ss)
-        var stringFlag = ""
-        for (u <- sL) {
-          if (u != "") {
-            stringFlag = stringFlag.concat(u)
-            stringFlag = stringFlag.concat("_")
-          }
-        }
-        if (i == symbolTable.getSType(id).last) {
-          val posFlag = 1
-          processStructD(id, s, l, posFlag, stringFlag, 0)
-        }
-        else {
-          val posFlag = 0
-          processStructD(id, s, l, posFlag, stringFlag, 0)
-        }
-      }
-      else if (symbolTable.getST(id, i).contains("ArrayRep")) {
-        if (symbolTable.getArraySType(id, i) == "StructRep") {
-          val structNum = symbolTable.getArraySSize(id, i).toInt
-          var l = List[String]()
-          l = l :+ i
-          var ss = List[String]()
-          ss = ss :+ i
-          val sL = digEndingStructs(s, ss)
-          var stringFlag = ""
-          for (u <- sL) {
-            if (u != "") {
-              stringFlag = stringFlag.concat(u)
-              stringFlag = stringFlag.concat("_")
-            }
-          }
-          if (i == symbolTable.getSType(id).last) {
-            val posFlag = 1
-            doIndentation()
-            out.println("for Y in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-            indentationLevel += 1
-            processStructD(id, s, l, posFlag, stringFlag, structNum)
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-          else {
-            val posFlag = 0
-            doIndentation()
-            out.println("for Y in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-            indentationLevel += 1
-            processStructD(id, s, l, posFlag, stringFlag, structNum)
-            indentationLevel -= 1
-            doIndentation()
-            out.println("end loop;")
-          }
-        }
-        else if (symbolTable.getArraySType(id, i) == "EnumRep") {
-          doIndentation()
-          out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-          indentationLevel += 1
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-          doIndentation()
-          out.println("if Raw_" + i + " in " + s +
-            "'Pos(" + s + "'First) .. " +
-            s + "'Pos(" + s +
-            "'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(i + "(I)" + " := " + s + "'Val(Raw_" + i + ");")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          doIndentation()
-          out.println(i + "(I)" + " := " + s + "'First;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end loop;")
-        }
-        else if (symbolTable.getArraySType(id, i) == "StringRep") {
-          doIndentation()
-          out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-          indentationLevel += 1
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + "_Size, Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-          doIndentation()
-          out.println("if Raw_" + i +
-            "_Size in XDR.XDR_Unsigned(Natural'First) .. XDR.XDR_Unsigned(Natural'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(i + "_Size(I) := Natural(Raw_" + i + "_Size);")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println(i + "_Size(I) := 0;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          doIndentation()
-          out.println("if " + i + "_Size(I) < 1 then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, " + i + "(" + i + "'First .. " + i +
-            "'First + (" + i + "_Size(I) - 1)), Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end loop;")
-        }
-        else if (s == "null" && symbolTable.getArraySType(id, i) == "BoolRep") {
-          doIndentation()
-          out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-          indentationLevel += 1
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-          doIndentation()
-          out.println(i + "(I) := Boolean'Val(XDR.XDR_Boolean'Pos(Raw_" + i + "));")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end loop;")
-        }
-        else if (s != "null" && symbolTable.getArraySType(id, i) == "BoolRep") {
-          doIndentation()
-          out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-          indentationLevel += 1
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-          doIndentation()
-          out.println(i + "(I) := " + s + "'Val(XDR.XDR_Boolean'Pos(Raw_" + i + "));")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end loop;")
-        }
-        else if (s != "null" && symbolTable.getArraySType(id, i) == "UHyperRep") {
-          doIndentation()
-          out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-          indentationLevel += 1
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-          doIndentation()
-          out.println("if Raw_" + i + " in XDR.XDR_Unsigned_Hyper(" + s +
-            "'First) .. XDR.XDR_Unsigned_Hyper(" + s + "'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(i + "(I) := " + s + "(Raw_" + i + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end loop;")
-        }
-        else if (s == "null" && symbolTable.getArraySType(id, i) == "UHyperRep") {
-          doIndentation()
-          out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-          indentationLevel += 1
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-          doIndentation()
-          out.println("if Raw_" + i + " in XDR.XDR_Unsigned_Hyper(Lib.U_Hyper_Type'First) .. XDR.XDR_Unsigned_Hyper(Lib.U_Hyper_Type'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(i + "(I) := Lib.U_Hyper_Type(Raw_" + i + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end loop;")
-        }
-        else if (s != "null" && symbolTable.getArraySType(id, i) == "HyperRep") {
-          doIndentation()
-          out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-          indentationLevel += 1
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-          doIndentation()
-          out.println("if Raw_" + i + " in XDR.XDR_Hyper(" + s +
-            "'First) .. XDR.XDR_Hyper(" + s + "'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(i + "(I) := " + s + "(Raw_" + i + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end loop;")
-        }
-        else if (s == "null" && symbolTable.getArraySType(id, i) == "HyperRep") {
-          doIndentation()
-          out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-          indentationLevel += 1
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-          doIndentation()
-          out.println("if Raw_" + i + " in XDR.XDR_Hyper(Lib.Hyper_Type'First) .. XDR.XDR_Hyper(Lib.Hyper_Type'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(i + "(I) := Lib.Hyper_Type(Raw_" + i + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end loop;")
-        }
-        else if (s == "null" && symbolTable.getArraySType(id, i) == "DoubleRep") {
-          doIndentation()
-          out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-          indentationLevel += 1
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-          doIndentation()
-          out.println("if Raw_" + i + " in XDR.XDR_Double(Double'First) .. XDR.XDR_Double(Double'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(i + "(I) := Double(Raw_" + i + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end loop;")
-        }
-        else if (s != "null" && symbolTable.getArraySType(id, i) == "DoubleRep") {
-          doIndentation()
-          out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-          indentationLevel += 1
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-          doIndentation()
-          out.println("if Raw_" + i + " in XDR.XDR_Double(" + s +
-            "'First) .. XDR.XDR_Double(" + s + "'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(i + "(I) := " + s + "(Raw_" + i + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end loop;")
-        }
-        else if (s == "null" && symbolTable.getArraySType(id, i) == "FloatRep") {
-          doIndentation()
-          out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-          indentationLevel += 1
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-          doIndentation()
-          out.println("if Raw_" + i + " in XDR.XDR_Float(Float'First) .. XDR.XDR_Float(Float'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(i + "(I) := Float(Raw_" + i + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end loop;")
-        }
-        else if (s != "null" && symbolTable.getArraySType(id, i) == "FloatRep") {
-          doIndentation()
-          out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-          indentationLevel += 1
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-          doIndentation()
-          out.println("if Raw_" + i + " in XDR.XDR_Float(" + s +
-            "'First) .. XDR.XDR_Float(" + s + "'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(i + "(I) := " + s + "(Raw_" + i + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end loop;")
-        }
-        else if (s != "null" && symbolTable.getArraySType(id, i) == "UIntRep") {
-          doIndentation()
-          out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-          indentationLevel += 1
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-          doIndentation()
-          out.println("if Raw_" + i + " in XDR.XDR_Unsigned(Lib.Quadruple_Octet'First) .. XDR.XDR_Unsigned(Lib.Quadruple_Octet'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(i + "(I) := " + s + "(Raw_" + i + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end loop;")
-        }
-        else if (s == "null" && symbolTable.getArraySType(id, i) == "UIntRep") {
-          doIndentation()
-          out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-          indentationLevel += 1
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-          doIndentation()
-          out.println("if Raw_" + i + " in XDR.XDR_Unsigned(Lib.Quadruple_Octet'First) .. XDR.XDR_Unsigned(Lib.Quadruple_Octet'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(i + "(I) := Lib.Quadruple_Octet(Raw_" + i + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end loop;")
-        }
-        else if (s != "null" && symbolTable.getArraySType(id, i) == "IntRep") {
-          doIndentation()
-          out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-          indentationLevel += 1
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-          doIndentation()
-          out.println("if Raw_" + i + " in XDR.XDR_Integer(Integer'First) .. XDR.XDR_Integer(Integer'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(i + "(I) := " + s + "(Raw_" + i + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end loop;")
-        }
-        else if (s == "null" && symbolTable.getArraySType(id, i) == "IntRep") {
-          doIndentation()
-          out.println("for I in Integer range 0 .. " + symbolTable.getArraySSize(id, i) + " loop")
-          indentationLevel += 1
-          doIndentation()
-          out.println("if Decode_Status = Success then")
-          indentationLevel += 1
-          doIndentation()
-          out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-          doIndentation()
-          out.println("Position := Last + 1;")
-          doIndentation()
-          out.println("if Raw_" + i + " in XDR.XDR_Integer(Integer'First) .. XDR.XDR_Integer(Integer'Last) then")
-          indentationLevel += 1
-          doIndentation()
-          out.println(i + "(I) := Integer(Raw_" + i + ");")
-          doIndentation()
-          out.println("Decode_Status := Success;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("else")
-          indentationLevel += 1
-          doIndentation()
-          out.println("Decode_Status := Malformed;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end if;")
-          indentationLevel -= 1
-          doIndentation()
-          out.println("end loop;")
-        }
-      }
-      else if (symbolTable.getST(id, i).contains("EnumRep")) {
-        doIndentation()
-        out.println("if Decode_Status = Success then")
-        indentationLevel += 1
-        doIndentation()
-        out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        doIndentation()
-        out.println("if Raw_" + i + " in " + s +
-          "'Pos(" + s + "'First) .. " +
-          s + "'Pos(" + s +
-          "'Last) then")
-        indentationLevel += 1
-        doIndentation()
-        out.println(i + " := " + s + "'Val(Raw_" + i + ");")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("else")
-        indentationLevel += 1
-        doIndentation()
-        out.println("Decode_Status := Malformed;")
-        doIndentation()
-        out.println(i + " := " + s + "'First;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-      }
-      else if (symbolTable.getST(id, i).contains("StringRep")) {
-        doIndentation()
-        out.println("if Decode_Status = Success then")
-        indentationLevel += 1
-        doIndentation()
-        out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + "_Size, Last);")
-        doIndentation()
-        out.println("Position := Last + 1;")
-        doIndentation()
-        out.println("if Raw_" + i +
-          "_Size in XDR.XDR_Unsigned(Natural'First) .. XDR.XDR_Unsigned(Natural'Last) then")
-        indentationLevel += 1
-        doIndentation()
-        out.println(i + "_Size := Natural(Raw_" + i + "_Size);")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("else")
-        indentationLevel += 1
-        doIndentation()
-        out.println(i + "_Size := 0;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-        doIndentation()
-        out.println("if " + i + "_Size < 1 then")
-        indentationLevel += 1
-        doIndentation()
-        out.println("XDR.Decode(Message.Payload, Position, " + i + "(" + i + "'First .. " + i +
-          "'First + (" + i + "_Size - 1)), Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-      }
-      else if (s == "null" && symbolTable.getST(id, i).contains("BoolRep")) {
-        doIndentation()
-        out.println("if Decode_Status = Success then")
-        indentationLevel += 1
-        doIndentation()
-        out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        doIndentation()
-        out.println(i + " := Boolean'Val(XDR.XDR_Boolean'Pos(Raw_" + i + "));")
-        doIndentation()
-        out.println("Decode_Status := Success;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-      }
-      else if (s != "null" && symbolTable.getST(id, i).contains("BoolRep")) {
-        doIndentation()
-        out.println("if Decode_Status = Success then")
-        indentationLevel += 1
-        doIndentation()
-        out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        doIndentation()
-        out.println(i + " := " + s + "'Val(XDR.XDR_Boolean'Pos(Raw_" + i + "));")
-        doIndentation()
-        out.println("Decode_Status := Success;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-      }
-      else if (s != "null" && symbolTable.getST(id, i).contains("UHyperRep")) {
-        doIndentation()
-        out.println("if Decode_Status = Success then")
-        indentationLevel += 1
-        doIndentation()
-        out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        doIndentation()
-        out.println("if Raw_" + i + " in XDR.XDR_Unsigned_Hyper(" + s +
-          "'First) .. XDR.XDR_Unsigned_Hyper(" + s + "'Last) then")
-        indentationLevel += 1
-        doIndentation()
-        out.println(i + " := " + s + "(Raw_" + i + ");")
-        doIndentation()
-        out.println("Decode_Status := Success;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("else")
-        indentationLevel += 1
-        doIndentation()
-        out.println("Decode_Status := Malformed;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-      }
-      else if (s == "null" && symbolTable.getST(id, i).contains("UHyperRep")) {
-        doIndentation()
-        out.println("if Decode_Status = Success then")
-        indentationLevel += 1
-        doIndentation()
-        out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        doIndentation()
-        out.println("if Raw_" + i + " in XDR.XDR_Unsigned_Hyper(Lib.U_Hyper_Type'First) .. XDR.XDR_Unsigned_Hyper(Lib.U_Hyper_Type'Last) then")
-        indentationLevel += 1
-        doIndentation()
-        out.println(i + " := Lib.U_Hyper_Type(Raw_" + i + ");")
-        doIndentation()
-        out.println("Decode_Status := Success;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("else")
-        indentationLevel += 1
-        doIndentation()
-        out.println("Decode_Status := Malformed;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-      }
-      else if (s != "null" && symbolTable.getST(id, i).contains("HyperRep")) {
-        doIndentation()
-        out.println("if Decode_Status = Success then")
-        indentationLevel += 1
-        doIndentation()
-        out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        doIndentation()
-        out.println("if Raw_" + i + " in XDR.XDR_Hyper(" + s +
-          "'First) .. XDR.XDR_Hyper(" + s + "'Last) then")
-        indentationLevel += 1
-        doIndentation()
-        out.println(i + " := " + s + "(Raw_" + i + ");")
-        doIndentation()
-        out.println("Decode_Status := Success;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("else")
-        indentationLevel += 1
-        doIndentation()
-        out.println("Decode_Status := Malformed;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-      }
-      else if (s == "null" && symbolTable.getST(id, i).contains("HyperRep")) {
-        doIndentation()
-        out.println("if Decode_Status = Success then")
-        indentationLevel += 1
-        doIndentation()
-        out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        doIndentation()
-        out.println("if Raw_" + i + " in XDR.XDR_Hyper(Lib.Hyper_Type'First) .. XDR.XDR_Hyper(Lib.Hyper_Type'Last) then")
-        indentationLevel += 1
-        doIndentation()
-        out.println(i + " := Lib.Hyper_Type(Raw_" + i + ");")
-        doIndentation()
-        out.println("Decode_Status := Success;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("else")
-        indentationLevel += 1
-        doIndentation()
-        out.println("Decode_Status := Malformed;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-      }
-      else if (s == "null" && symbolTable.getST(id, i).contains("DoubleRep")) {
-        doIndentation()
-        out.println("if Decode_Status = Success then")
-        indentationLevel += 1
-        doIndentation()
-        out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        doIndentation()
-        out.println("if Raw_" + i + " in XDR.XDR_Double(Double'First) .. XDR.XDR_Double(Double'Last) then")
-        indentationLevel += 1
-        doIndentation()
-        out.println(i + " := Double(Raw_" + i + ");")
-        doIndentation()
-        out.println("Decode_Status := Success;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("else")
-        indentationLevel += 1
-        doIndentation()
-        out.println("Decode_Status := Malformed;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-      }
-      else if (s != "null" && symbolTable.getST(id, i).contains("DoubleRep")) {
-        doIndentation()
-        out.println("if Decode_Status = Success then")
-        indentationLevel += 1
-        doIndentation()
-        out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        doIndentation()
-        out.println("if Raw_" + i + " in XDR.XDR_Double(" + s +
-          "'First) .. XDR.XDR_Double(" + s + "'Last) then")
-        indentationLevel += 1
-        doIndentation()
-        out.println(i + " := " + s + "(Raw_" + i + ");")
-        doIndentation()
-        out.println("Decode_Status := Success;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("else")
-        indentationLevel += 1
-        doIndentation()
-        out.println("Decode_Status := Malformed;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-      }
-      else if (s == "null" && symbolTable.getST(id, i).contains("FloatRep")) {
-        doIndentation()
-        out.println("if Decode_Status = Success then")
-        indentationLevel += 1
-        doIndentation()
-        out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        doIndentation()
-        out.println("if Raw_" + i + " in XDR.XDR_Float(Float'First) .. XDR.XDR_Float(Float'Last) then")
-        indentationLevel += 1
-        doIndentation()
-        out.println(i + " := Float(Raw_" + i + ");")
-        doIndentation()
-        out.println("Decode_Status := Success;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("else")
-        indentationLevel += 1
-        doIndentation()
-        out.println("Decode_Status := Malformed;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-      }
-      else if (s != "null" && symbolTable.getST(id, i).contains("FloatRep")) {
-        doIndentation()
-        out.println("if Decode_Status = Success then")
-        indentationLevel += 1
-        doIndentation()
-        out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        doIndentation()
-        out.println("if Raw_" + i + " in XDR.XDR_Float(" + s +
-          "'First) .. XDR.XDR_Float(" + s + "'Last) then")
-        indentationLevel += 1
-        doIndentation()
-        out.println(i + " := " + s + "(Raw_" + i + ");")
-        doIndentation()
-        out.println("Decode_Status := Success;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("else")
-        indentationLevel += 1
-        doIndentation()
-        out.println("Decode_Status := Malformed;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-      }
-      else if (s != "null" && symbolTable.getST(id, i).contains("UIntRep")) {
-        doIndentation()
-        out.println("if Decode_Status = Success then")
-        indentationLevel += 1
-        doIndentation()
-        out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        doIndentation()
-        out.println("if Raw_" + i + " in XDR.XDR_Unsigned(" + s + "'First) .. XDR.XDR_Unsigned(" + s + "'Last) then")
-        indentationLevel += 1
-        doIndentation()
-        out.println(i + " := " + s + "(Raw_" + i + ");")
-        doIndentation()
-        out.println("Decode_Status := Success;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("else")
-        indentationLevel += 1
-        doIndentation()
-        out.println("Decode_Status := Malformed;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-      }
-      else if (s == "null" && symbolTable.getST(id, i).contains("UIntRep")) {
-        doIndentation()
-        out.println("if Decode_Status = Success then")
-        indentationLevel += 1
-        doIndentation()
-        out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        doIndentation()
-        out.println("if Raw_" + i + " in XDR.XDR_Unsigned(Lib.Quadruple_Octet'First) .. XDR.XDR_Unsigned(Lib.Quadruple_Octet'Last) then")
-        indentationLevel += 1
-        doIndentation()
-        out.println(i + " := Lib.Quadruple_Octet(Raw_" + i + ");")
-        doIndentation()
-        out.println("Decode_Status := Success;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("else")
-        indentationLevel += 1
-        doIndentation()
-        out.println("Decode_Status := Malformed;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-      }
-      else if (s != "null" && symbolTable.getST(id, i).contains("IntRep")) {
-        doIndentation()
-        out.println("if Decode_Status = Success then")
-        indentationLevel += 1
-        doIndentation()
-        out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        doIndentation()
-        out.println("if Raw_" + i + " in XDR.XDR_Integer(" + s + "'First) .. XDR.XDR_Integer(" + s + "'Last) then")
-        indentationLevel += 1
-        doIndentation()
-        out.println(i + " := " + s + "(Raw_" + i + ");")
-        doIndentation()
-        out.println("Decode_Status := Success;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("else")
-        indentationLevel += 1
-        doIndentation()
-        out.println("Decode_Status := Malformed;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-      }
-      else if (s == "null" && symbolTable.getST(id, i).contains("IntRep")) {
-        doIndentation()
-        out.println("if Decode_Status = Success then")
-        indentationLevel += 1
-        doIndentation()
-        out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        doIndentation()
-        out.println("if Raw_" + i + " in XDR.XDR_Integer(Integer'First) .. XDR.XDR_Integer(Integer'Last) then")
-        indentationLevel += 1
-        doIndentation()
-        out.println(i + " := Integer(Raw_" + i + ");")
-        doIndentation()
-        out.println("Decode_Status := Success;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("else")
-        indentationLevel += 1
-        doIndentation()
-        out.println("Decode_Status := Malformed;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-      }
-      else if (symbolTable.getST(id, i).contains("DataRep")) {
-        doIndentation()
-        out.println("if Decode_Status = Success then")
-        indentationLevel += 1
-        doIndentation()
-        out.println("XDR.Decode(Message.Payload, Position, Raw_Size, Last);")
-        doIndentation()
-        out.println("Position := Last + 1;")
-        doIndentation()
-        out.println("if Raw_Size in XDR.XDR_Unsigned(CubedOS.Lib.Octet_Array_Count'First) .. XDR.XDR_Unsigned(CubedOS.Lib.Octet_Array_Count'Last) then")
-        indentationLevel += 1
-        doIndentation()
-        out.println("Size := CubedOS.Lib.Octet_Array_Count(Raw_Size);")
-        doIndentation()
-        out.println("Decode_Status := Success;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("else")
-        indentationLevel += 1
-        doIndentation()
-        out.println("Decode_Status := Malformed;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-        doIndentation()
-        out.println("if Size < " + i + "'Length then")
-        indentationLevel += 1
-        doIndentation()
-        out.println("XDR.Decode(Message.Payload, Position, " + i + "(" + i + "'First .. " + i + "'First + Size - 1), Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        doIndentation()
-        out.println("Decode_Status := Success;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("else")
-        indentationLevel += 1
-        doIndentation()
-        out.println("Decode_Status := Malformed;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-      }
-      else if (symbolTable.getST(id, i).contains("TimeSpanRep")) {
-        doIndentation()
-        out.println("if Decode_Status = Success then")
-        indentationLevel += 1
-        doIndentation()
-        out.println("XDR.Decode(Message.Payload, Position, Raw_Interval, Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        doIndentation()
-        out.println("if Raw_Interval < XDR.XDR_Unsigned(Integer'Last) then")
-        indentationLevel += 1
-        doIndentation()
-        out.println(i + " := Ada.Real_Time.Milliseconds(Integer(Raw_Interval));")
-        doIndentation()
-        out.println("Decode_Status := Success;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("else")
-        indentationLevel += 1
-        doIndentation()
-        out.println("Decode_Status := Malformed;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-      }
-      else if (symbolTable.getST(id, i).contains("TimeRep")) {
-        doIndentation()
-        out.println("if Decode_Status = Success then")
-        indentationLevel += 1
-        doIndentation()
-        out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER.getText) {
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        doIndentation()
-        out.println("if Raw_" + i + " < XDR.XDR_Unsigned(Integer'Last) then")
-        indentationLevel += 1
-        doIndentation()
-        out.println("Seconds := Ada.Real_Time.Seconds_Count(Raw_" + i + ");")
-        doIndentation()
-        out.println(i + " := Ada.Real_Time.Time_Of(Seconds, Ada.Real_Time.Time_Span_Zero);")
-        doIndentation()
-        out.println("Decode_Status := Success;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("else")
-        indentationLevel += 1
-        doIndentation()
-        out.println("Decode_Status := Malformed;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-      }
-      else if (symbolTable.getST(id, i).contains("VoidRep")) {
-        //do nothing!
-      }
-      else {
-        doIndentation()
-        out.println("if Decode_Status = Success then")
-        indentationLevel += 1
-        doIndentation()
-        out.println("XDR.Decode(Message.Payload, Position, Raw_" + i + ", Last);")
-        if (i != ctx.declaration(num - 1).IDENTIFIER().getText) {
-          doIndentation()
-          out.println("Position := Last + 1;")
-        }
-        doIndentation()
-        out.println("if Raw_" + i + " in " + s +
-          "'Pos(" + s + "'First) .. " +
-          s + "'Pos(" + s +
-          "'Last) then")
-        indentationLevel += 1
-        doIndentation()
-        out.println(i + " := " + s + "'Val(Raw_" + i + ");")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("else")
-        indentationLevel += 1
-        doIndentation()
-        out.println("Decode_Status := Malformed;")
-        doIndentation()
-        out.println(i + " := " + s + "'First;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-        indentationLevel -= 1
-        doIndentation()
-        out.println("end if;")
-      }
-    }
-    indentationLevel -= 1
-    doIndentation()
-    out.println("end " + id + decodeString + ";")
-    null
-  }
-
-  //Process structs at end of struct element list (nested structs).
-  def digEndingStructs(id: String, l: List[String]): List[String] = {
-    var ll = List[String]()
-    ll = l
-    for (u <- symbolTable.getSType(id)) {
-      if (u == symbolTable.getSType(id).last) {
-        if (symbolTable.getST(id, u).contains("StructRep")) {
-          ll = ll :+ u
-          ll = digEndingStructs(symbolTable.getStructuredTypeParent(id, u), ll)
-        }
-      }
-    }
-    ll
-  }
-
-  override def visitType_def(ctx: MXDRParser.Type_defContext): Void = {
-    val typeOfTypeDef = ctx.getChild(0)
-    typeOfTypeDef.getText match {
-      case "message" =>
-        var voidFlag = 0
-        for (i <- 0 until ctx.struct_body.declaration.size()) {
-          if (ctx.struct_body().declaration(i).getText == "void") {
-            voidFlag = 1
-          }
-        }
-        if (voidFlag == 1 && ctx.struct_body.declaration.size() > 1) {
-          println("Can't have multiple message struct")
-          println("parameters included with void.")
-        }
-        else if (voidFlag == 1 && ctx.struct_body.declaration.size() == 1) {
-          val n = ctx.IDENTIFIER.getText
-          var arrowFlag = 0
-          if (ctx.children.contains(ctx.LARROW)) {
-            arrowFlag = 1
-          }
-          doEncode(ctx.struct_body, n, arrowFlag)
-          out.println("")
-        }
-        else {
-          val n = ctx.IDENTIFIER().getText
-          var arrowFlag = 0
-          if (ctx.children.contains(ctx.LARROW)) {
-            arrowFlag = 1
-          }
-          doEncode(ctx.struct_body, n, arrowFlag)
-          doDecode(ctx.struct_body, n, arrowFlag)
-          out.println("")
-        }
+  private def generateBulk(): Unit = {
+    println("procedure Free is new Ada.Unchecked_Deallocation(String, String_Ptr);")
+    mxdrTree.getItems[MXDREntity]().foreach {
+      case x: MStructRep =>
+        handleMessage(x)
       case _ =>
     }
-    null
+  }
+
+  /**
+   * Print body of encoder subprogram.
+   * @param message Type info about the message. Doesn't
+   *               contain anonymous array components.
+   */
+  private def printEncode(message: MStructRep): Unit = {
+    assert(!message.components.exists(component => component.typeRep.isInstanceOf[ArrayRep] && component.typeRep.isAnonymous))
+    val msgName = message.typeName.get
+
+    // Signature
+    val encodeString = "_Encode"
+    println("procedure " + msgName + encodeString)
+    indentationLevel += 1
+
+    // Parameters
+    val struct = new AdaGeneratorMessageHelper(message)
+    struct.printEncoderParams(indentationLevel, out)
+    indentationLevel -= 1
+    println("is")
+
+    // Declarations
+    indentationLevel += 1
+    println("subtype Data_Index_Type is XDR_Index_Type range 0 .. 1023;")
+    println("Position   : Data_Index_Type;")
+    println("Last       : Data_Index_Type;")
+    println("subtype Definite_Data_Array is Data_Array(Data_Index_Type);")
+    println("Payload : Data_Array_Owner := new Definite_Data_Array'(others => 0);")
+    println("Message : Mutable_Message_Record;")
+
+    indentationLevel -= 1
+
+    // Implementation
+    println("begin")
+    indentationLevel += 1
+
+    println("Position := 0;")
+
+    // Encode every component
+    for (component <- message.components) {
+      printEncodeComponentIntoPayload(component.name, component.typeRep)
+    }
+
+    // Assemble the message
+    println("Make_Empty_Message (")
+    indentationLevel += 1
+    println("Sender_Address   => Sender_Address,")
+    println("Receiver_Address => Receiver_Address,")
+    println("Request_ID   => Request_ID,")
+    println(s"Message_Type => ${msgName}_Msg,")
+    println("Payload => Payload,")
+    println("Result => Message,")
+    println("Priority   => Priority);")
+    indentationLevel -= 1
+
+    // Return it
+    println("Result := Immutable(Message);")
+    // Free the memory
+    println("Delete(Message);")
+
+    // Ignore final values
+    println("pragma Unused(Last, Payload, Position, Message);")
+
+    indentationLevel -= 1
+    println("end " + msgName + encodeString + ";")
+    println()
+  }
+
+  /**
+   * Encodes the given value into the payload of the message
+   * using the CubedOS.Lib.XDR functions.
+   * @param valueName The name referring the value to encode in Ada.
+   * @param typeRep The type of the data being encoded. If an array,
+   *                must have a typename.
+   * @param depth The call depth for recursion.
+   */
+  private def printEncodeComponentIntoPayload(valueName: String, typeRep: Rep, depth: Int = 0): Unit = {
+    if (typeRep == VoidRep) return
+    assert(!(typeRep.isInstanceOf[ArrayRep] && typeRep.isAnonymous),
+      "SPARK/Ada doesn't support anonymous arrays.")
+
+    val iteratorName = "I" + depth
+    val typeName = typeRep.typeName.getOrElse(adaFriendlyTypeName(typeRep))
+
+    typeRep match {
+      case x: StructRep =>
+        for (component <- x.components) {
+          printEncodeComponentIntoPayload(valueName + "." + component.name, component.typeRep, depth + 1)
+        }
+
+      case arr: ArrayRep =>
+        if (arr.isInstanceOf[VariableArrayRep]) {
+          println(s"XDR.Encode(XDR.XDR_Unsigned($valueName'Length), Payload.all, Position, Last);")
+          println("Position := Last + 1;")
+        }
+
+        println(s"for $iteratorName of $valueName loop")
+        indentationLevel += 1
+        printEncodeComponentIntoPayload(iteratorName, arr.elementType, depth + 1)
+        indentationLevel -= 1
+        println("end loop;")
+
+      case _: EnumRep =>
+        println(s"XDR.Encode(XDR.XDR_Unsigned($typeName'Pos($valueName)), Payload.all, Position, Last);")
+        println("Position := Last + 1;")
+
+      case _: StringRep =>
+        println("XDR.Encode(XDR.XDR_Unsigned(" + valueName + "'Length), Payload.all, Position, Last);")
+        println("Position := Last + 1;")
+        // The first iteration is done on message components.
+        // For encoder procedures, it's more convenient to pass in by value than reference.
+        // Nested data structures always refer to strings by reference though.
+        if (depth == 0)
+          println(s"XDR.Encode(String($valueName), Payload.all, Position, Last);")
+        else
+          println(s"XDR.Encode(String($valueName.all), Payload.all, Position, Last);")
+        println("Position := Last + 1;")
+
+      case rep: NumericRep =>
+        println(s"XDR.Encode(XDR.${xdrTypeName(rep)}($valueName), Payload.all, Position, Last);")
+        println("Position := Last + 1;")
+
+      case _: BoolRep =>
+        println(s"XDR.Encode(XDR.XDR_Boolean'Val($typeName'Pos($valueName)), Payload.all, Position, Last);")
+        println("Position := Last + 1;")
+
+      case _: TimeSpanRep =>
+        println("declare")
+        indentationLevel += 1
+        println("type Time_Float is delta 0.000_000_001 digits 18;")
+        println("type Big_Float is delta 1.0 digits 18;")
+        printlnOne("begin")
+        println(s"XDR.Encode(XDR_Unsigned_Hyper(Time_Float(To_Duration($valueName)) * Big_Float(1_000_000_000.0)), Payload.all, Position, Last);")
+        println("Position := Last + 1;")
+        indentationLevel -= 1
+        println("end;")
+
+      case _: TimeRep =>
+        println("declare")
+        indentationLevel += 1
+        println("Seconds : Seconds_Count;")
+        println("Frac : Time_Span;")
+        println("Result : XDR_Unsigned_Hyper;")
+        printlnOne("begin")
+        println(s"Split($valueName, Seconds, Frac);")
+        println("Result := XDR_Unsigned_Hyper(Seconds) * 1_000_000_000 + XDR_Unsigned_Hyper(To_Duration(Frac) * 1_000_000_000);")
+        println(s"XDR.Encode(Result, Payload.all, Position, Last);")
+        println("Position := Last + 1;")
+        indentationLevel -= 1
+        println("end;")
+
+      case _: OpaqueRep =>
+
+        if (typeRep.isInstanceOf[VariableOpaqueRep]) {
+          println(s"XDR.Encode(XDR.XDR_Unsigned($valueName'Length), Payload.all, Position, Last);")
+          println("Position := Last + 1;")
+        }
+        // The first iteration is done on message components.
+        // For encoder procedures, it's more convenient to pass in by value than reference.
+        // Nested data structures always refer to strings by reference though.
+        if (depth != 0 && typeRep.isInstanceOf[VariableOpaqueRep])
+          println(s"XDR.Encode(Octet_Array($valueName.all), Payload.all, Position, Last);")
+        else
+          println(s"XDR.Encode(Octet_Array($valueName), Payload.all, Position, Last);")
+        println("Position := Last + 1;")
+
+      case x => throw new Error(s"Unimplemented component type ${x.toString}.")
+    }
+  }
+
+  /**
+   * Prints the unsafe send message procedure for the given message.
+   * @param message The message type.
+   * @param direction The direction the message is sent.
+   * @param withStatus If the resulting procedure should include a send result status.
+   */
+  private def printUnsafeSend(message: MStructRep, direction: MessageDirection.Value, withStatus: Boolean): Unit = {
+    val msgName = message.typeName.get
+    println("procedure Send_" + msgName)
+    indentationLevel += 1
+
+    // Parameters
+    val struct = new AdaGeneratorMessageHelper(message)
+    val (_, _) = struct.printUnsafeSenderParams(indentationLevel, out, withStatus)
+    indentationLevel -= 1
+
+    // Declarations
+    println("is")
+    indentationLevel += 1
+    println("Message : Message_Record;")
+    indentationLevel -= 1
+
+    // Implementation
+    println("begin")
+    indentationLevel += 1
+    println("pragma Assert(Payload(Message) = null);")
+    // Encode the message
+    println(s"${msgName}_Encode(")
+    indentationLevel += 1
+
+    println("Sender_Address => (This_Domain.ID, Module_ID(Sender)),")
+    println("Receiver_Address => Receiver_Address,")
+    println("Request_ID => Request_ID,")
+
+    struct.getDataParams.foreach(param => {
+      println(param._1 + " => " + param._1 + ",")
+    })
+
+    println("Result => Message,")
+    println("Priority => Priority);")
+    indentationLevel -= 1
+
+    // Send the message
+    if (withStatus) println("Message_Manager.Send_Message(Sender, Message, Status);")
+    else println("Message_Manager.Send_Message(Sender, Message);")
+
+    indentationLevel -= 1
+    println(s"end Send_$msgName;")
+    println()
+  }
+
+  /**
+   * Print the implementation of the safe message send procedure.
+   * @param message The message being sent.
+   * @param direction Whether the message is one sent or received
+   *                  from the module.
+   * @param withStatus If the resulting procedure should include a send
+   *                   result status parameter.
+   */
+  private def printSafeSend(message: MStructRep, direction: MessageDirection.Value, withStatus: Boolean): Unit = {
+    val msgName = message.typeName.get
+    println("procedure Send_" + msgName)
+    indentationLevel += 1
+
+    // Parameters
+    val struct = new AdaGeneratorMessageHelper(message)
+    val (_, _) = struct.printSafeSenderParams(indentationLevel, out, withStatus)
+
+    // Declarations
+    printlnOne("is")
+    println("Message : Message_Record;")
+    if (!withStatus) println("Status : Status_Type := Unavailable;")
+
+    // Implementation
+    printlnOne("begin")
+    println("pragma Assert(Payload(Message) = null);")
+    // Encode the message
+    println(s"${msgName}_Encode(")
+    indentationLevel += 1
+
+    println("Sender_Address => (This_Domain.ID, Module_ID(Sender)),")
+    if (withStatus) println("Receiver_Address => (Domain_ID, Receiving_Module.Module_ID),")
+    else println("Receiver_Address => (Receiving_Domain.ID, Receiving_Module.Module_ID),")
+    println("Request_ID => Request_ID,")
+
+    struct.getDataParams.foreach(param => {
+      println(param._1 + " => " + param._1 + ",")
+    })
+
+    println("Result => Message,")
+    println("Priority => Priority);")
+    indentationLevel -= 1
+
+    // Send the message
+    if (withStatus) println("Message_Manager.Send_Message(Sender, Message, Receiving_Module, This_Domain, Status);")
+    else println("Message_Manager.Send_Message(Sender, Message, Receiving_Module, Receiving_Domain, Status);")
+    if (!withStatus) println("pragma Unused(Status);")
+
+    indentationLevel -= 1
+    println(s"end Send_$msgName;")
+    println()
+  }
+
+  /**
+   * Prints the local variable declarations that will
+   * be needed to decode the given message.component name.
+   *
+   * procedure Decode_...
+   * is
+   * ... <- Prints this stuff
+   * begin
+   *
+   * Depending on what the component's type, there
+   * may be zero or more declarations. The declarations
+   * take the form Raw_prefix_componentName.
+   *
+   * This function is recursive for some component types.
+   * Each recursion prepends to the prefix the name of the outer
+   * component and "_".
+   *
+   * @param prefix The string that should prefix the component name.
+   *               Must end but not begin with an underscore.
+   *               "OuterComponent_", ""
+   * @param component The component to declare for.
+   */
+  private def printDeclarationsFor(prefix: String, component: StructComponent): Unit = {
+    val componentName = component.name
+    assert(!prefix.contains("__"), "Ada doesn't support \"__\" in names.")
+
+    component.typeRep match {
+      case struct: StructRep =>
+        for (c <- struct.components) {
+          printDeclarationsFor(prefix + componentName + "_", c)
+        }
+      case arr: ArrayRep =>
+        if (arr.isInstanceOf[VariableArrayRep])
+          println(s"$prefix${componentName}_Size : XDR_Unsigned;")
+
+        arr.elementType match {
+          case struct: StructRep =>
+            for (c <- struct.components)
+              printDeclarationsFor(prefix + componentName + "_", c)
+          case _: EnumRep => println("Raw_" + prefix + componentName + " : XDR.XDR_Unsigned;")
+          case _: StringRep => println("Raw_" + prefix + componentName + "_Size : XDR.XDR_Unsigned;")
+          case _: BoolRep =>
+            println("Raw_" + prefix +  componentName + "   : XDR.XDR_Boolean;")
+          case rep: NumericRep =>
+            println(s"Raw_$prefix$componentName : ${xdrTypeName(rep)};")
+          case _: OpaqueRep =>
+        }
+      case _: EnumRep =>
+        println("Raw_" + prefix + componentName + " : XDR.XDR_Unsigned;")
+      case _: StringRep => println("Raw_" + prefix + componentName + "_Size : XDR.XDR_Unsigned;")
+      case _: BoolRep =>
+        println("Raw_" + prefix + componentName + "   : XDR.XDR_Boolean;")
+      case rep: NumericRep =>
+        println(s"Raw_$prefix$componentName : ${xdrTypeName(rep)};")
+      case _: TimeSpanRep =>
+        println(s"Raw_$prefix$componentName  : XDR.XDR_Unsigned_Hyper;")
+      case _: TimeRep =>
+        println("Raw_" + prefix + componentName + "   : XDR.XDR_Unsigned_Hyper;")
+      case _: VariableOpaqueRep =>
+//        println(s"Raw_$prefix${componentName}_Size : XDR.XDR_Unsigned;")
+      case _: FixedOpaqueRep =>
+      case r =>
+        throw new Error(s"Unimplemented declarations for $r")
+    }
+  }
+
+  /**
+   * Generate decoder function for message.
+   * @param message The message to decode.
+   */
+  private def printDecode(message: MStructRep): Unit = {
+    val msgName = message.typeName.get
+    val decodeString = "_Decode"
+    println("procedure " + msgName + decodeString)
+    indentationLevel += 1
+
+    // The message direction doesn't matter here
+    val rep = new AdaGeneratorMessageHelper(message)
+    rep.printDecoderParams(indentationLevel, out)
+
+    printlnOne("is")                                    // IS
+
+    println("Position : Data_Index_Type;")
+
+    // Print any intermediate storage variables needed for the message struct
+    for (component <- message.components)
+      printDeclarationsFor("", component)
+
+    println("Last : Data_Index_Type;")
+    indentationLevel -= 1
+
+    println("begin")                                 // BEGIN
+    indentationLevel += 1
+
+    println("Decode_Status := Success;")
+    // Set initial values for every component
+    for (component <- message.components) {
+      printAssignInitialValue(component.name, component.typeRep)
+    }
+    println("Position := 0;")
+  println()
+    println("-- Begin Decoding")
+    for (component <- message.components) {
+      printDecodeForItem(component.name, "Raw_" + component.name, component.typeRep)
+    }
+
+    indentationLevel -= 1
+    println("end " + msgName + decodeString + ";")
+    println()
+  }
+
+  /**
+   * Prints the Ada logic to read the message values from the payload,
+   * check that the result isn't malformed, then assign those values
+   * to the out parameters of the decode procedure.
+   * @param assignTarget The Ada string proceeding ":=" to assign the
+   *                     read value to. If the type is an array, does not
+   *                     include the index.
+   * @param tempStore The Ada variable that should be used to store the
+   *                  raw XDR value that was read from the payload before
+   *                  assigning it to the output. Usually Raw_*. Must be
+   *                  of the type being read. If we're reading an array,
+   *                  this variable represents a single element of it.
+   * @param typeRep The type of the data being decoded.
+   * @param depth The number of recursions deep the function is.
+   */
+  private def printDecodeForItem(assignTarget: String, tempStore: String, typeRep: Rep, depth: Int = 0): Unit = {
+    val iteratorName = "I" + depth
+
+    def start_if(condition: String): Unit = {
+      println(s"if $condition then")
+      indentationLevel += 1
+    }
+
+    def decode_and_increment(storeIn: String): Unit = {
+      println(s"XDR.Decode(Payload(Message).all, Position, $storeIn, Last);")
+      println("Position := Last + 1;")
+    }
+
+    def assign(value: String): Unit = {
+      println(s"$assignTarget := $value;")
+    }
+
+    // Note that SPARK has a hard time with if not condition return early proofs.
+    def return_early_if(condition: String): Unit = {
+      println(s"if $condition then Decode_Status := Malformed; return; end if;")
+    }
+    def else_return(): Unit = {
+      printlnOne("else")
+      println("pragma Assert(Boolean'(False));")
+      println("Decode_Status := Malformed;")
+      println("return;")
+      indentationLevel -= 1
+      println("end if;")
+    }
+
+    val typeName = typeRep.typeName.getOrElse(adaFriendlyTypeName(typeRep))
+
+    typeRep match {
+      case rep: StructRep =>
+        println(s"-- Decoding ${rep.typeName.get}")
+        for (component <- rep.components) {
+          printDecodeForItem(assignTarget  + '.' + component.name, tempStore + "_" + component.name, component.typeRep, depth + 1)
+        }
+
+      case arr: FixedArrayRep =>
+        println(s"for $iteratorName in 1 .. ${arr.size.value} loop -- Decoding elements of ${arr.typeName.get} of type ${arr.elementType.typeName.getOrElse(adaFriendlyTypeName(arr.elementType))}")
+        indentationLevel += 1
+        printDecodeForItem(s"$assignTarget($iteratorName)", tempStore, arr.elementType, depth + 1)
+        indentationLevel -= 1
+        println("end loop;")
+
+      case arr: VariableArrayRep =>
+        val sizeStore = assignTarget.replace('.', '_') + "_Size";
+        decode_and_increment(sizeStore)
+
+        return_early_if(s"$sizeStore > ${arr.maxSize.value}")
+
+        assign(s"new ${arr.typeName.get}(0 .. $assignTarget'Length - 1)")
+
+        println(s"for $iteratorName in 0 .. Natural($sizeStore) - 1 loop -- Decoding elements of ${arr.typeName.get} of type ${arr.elementType.typeName.getOrElse(adaFriendlyTypeName(arr.elementType))}")
+        indentationLevel += 1
+        printDecodeForItem(s"$assignTarget($iteratorName)", tempStore, arr.elementType, depth + 1)
+        indentationLevel -= 1
+        println("end loop;")
+
+      case rep: EnumRep =>
+        val enumName = rep.typeName.get
+        decode_and_increment(tempStore)
+        start_if(s"$tempStore in $enumName'Pos($enumName'First) .. $enumName'Pos($enumName'Last)")
+        assign(s"$enumName'Val($tempStore)")
+        else_return()
+
+      case s: StringRep =>
+        val sizeStore = assignTarget.replace('.', '_') + "_Size"
+
+        println("declare")
+        indentationLevel += 1
+        println(s"$sizeStore : XDR_Unsigned;")
+        printlnOne("begin")
+
+        println(s"XDR.Decode(Payload(Message).all, Position, $sizeStore, Last);")
+        println("Position := Last + 1;")
+        start_if(s"$sizeStore < ${s.maxLength.toString}")
+        // The string length is valid
+        println("declare")
+        indentationLevel += 1
+        println(s"Final_String_Size : constant XDR_Unsigned := $sizeStore;")
+        println(s"subtype Definite_String is ${s.typeName.getOrElse("String")}(1 .. Integer(Final_String_Size));")
+        printlnOne("begin")
+
+        println(s"Free($assignTarget);")
+        println(s"${assignTarget} := new Definite_String'(others => ' ');")
+        decode_and_increment(assignTarget + ".all")
+
+        indentationLevel -= 1
+        println("end;")
+        else_return()
+        indentationLevel -= 1
+        println("end;")
+
+      case rep: BoolRep =>
+        val typeName = rep.typeName.getOrElse(adaFriendlyTypeName(rep))
+        decode_and_increment(tempStore)
+        assign(s"$typeName'Val(XDR.XDR_Boolean'Pos($tempStore))")
+
+      case _: ContinuousRep =>
+        println("declare")
+        indentationLevel += 1
+        println("Special : Special_Float_Value;")
+        printlnOne("begin")
+
+        println(s"XDR.Decode(Payload(Message).all, Position, $tempStore, Last, Special);")
+        println("Position := Last + 1;")
+        val xdrName = "XDR." + xdrTypeName(typeRep)
+        start_if(s"$tempStore in $xdrName($typeName'First) .. $xdrName($typeName'Last) and Special = None")
+        assign(s"$typeName($tempStore)")
+        else_return()
+
+        indentationLevel -= 1
+        println("end;")
+
+      case _: NumericRep =>
+        println(s"XDR.Decode(Payload(Message).all, Position, $tempStore, Last);")
+        println("Position := Last + 1;")
+        val xdrName = "XDR." + xdrTypeName(typeRep)
+        start_if(s"$tempStore in $xdrName($typeName'First) .. $xdrName($typeName'Last)")
+        assign(s"$typeName($tempStore)")
+        else_return()
+
+      case _: TimeSpanRep =>
+        println(s"XDR.Decode(Payload(Message).all, Position, $tempStore, Last);")
+        println("Position := Last + 1;")
+        assign(s"Seconds(Integer($tempStore / 1_000_000_000)) + Nanoseconds(Integer($tempStore mod 1_000_000_000))")
+
+      case _: TimeRep =>
+        println(s"XDR.Decode(Payload(Message).all, Position, $tempStore, Last);")
+        println("Position := Last + 1;")
+        assign(s"$typeName(Ada.Real_Time.Time_Of(Seconds_Count($tempStore / 1_000_000_000), Nanoseconds(Integer($tempStore mod 1_000_000_000))))")
+
+      case VoidRep => // do nothing!
+      
+      case rep: VariableOpaqueRep =>
+        val sizeStore = assignTarget.replace('.', '_') + "_Size"
+        println("declare")
+        indentationLevel += 1
+
+        println(s"$sizeStore : XDR_Unsigned;")
+        printlnOne("begin")
+
+        println(s"XDR.Decode(Payload(Message).all, Position, $sizeStore, Last);")
+        println("Position := Last + 1;")
+
+        start_if(s"$sizeStore <= XDR_Unsigned(${rep.maxBytes.value})")
+
+        println("declare")
+        indentationLevel += 1
+        println(s"Final_Size : constant XDR_Unsigned := $sizeStore;")
+        println(s"subtype Definite_Octet_Array is $typeName(0 .. Natural(Final_Size) - 1);")
+        printlnOne("begin")
+        println(s"${assignTarget} := new Definite_Octet_Array'(others => 0);")
+        indentationLevel -= 1
+        println("end;")
+
+        println(s"XDR.Decode(Payload(Message).all, Position, Octet_Array(${assignTarget}.all), Last);")
+        println("Position := Last + 1;")
+        else_return()
+        indentationLevel -= 1
+        println("end;")
+
+      case _: FixedOpaqueRep =>
+        println(s"XDR.Decode(Payload(Message).all, Position, Octet_Array(${assignTarget}), Last);")
+        println("Position := Last + 1;")
+
+      case _ =>
+        throw new Error("Unimplemented decode procedure")
+
+    }
+  }
+
+  /**
+   * Prints an Ada statement assigning an arbitrary initial value to the
+   * given target. The target is an out parameter of a decoder function
+   * and as such should use Ada friendly types.
+   * @param assignTarget The string preceding the := operator.
+   * @param typeRep The type of data being assigned.
+   * @param depth Counts the number of recursions.
+   */
+  private def printAssignInitialValue(assignTarget: String, typeRep: Rep, depth: Int = 0): Unit = {
+    val iteratorName = "I" + depth.toString
+
+    val typeName = typeRep.typeName.getOrElse(adaFriendlyTypeName(typeRep))
+
+    typeRep match {
+      case _: NumericRep =>
+        println(s"$assignTarget := $typeName'Last;")
+      case _: BoolRep =>
+        println(s"$assignTarget := False;")
+      case e: EnumRep =>
+        println(s"$assignTarget := ${e.typeName.get}'First;")
+      case s: StringRep =>
+        println("declare")
+        indentationLevel += 1
+        println(s"subtype Definite_String is ${s.typeName.getOrElse("String")}(1..0);")
+        printlnOne("begin")
+        println(s"$assignTarget := new Definite_String'(others => ' ');")
+        indentationLevel -= 1
+        println("end;")
+      case arr: ArrayRep =>
+        val elementRep = arr.elementType
+
+        doIndentation()
+        out.print(s"for $iteratorName in ")
+
+        arr match {
+          case _: FixedArrayRep =>
+            out.println(s"${assignTarget}'Range loop")
+          case _: VariableArrayRep =>
+            val sizeVar = assignTarget + "'Length - 1"
+            out.println(s"0 .. $sizeVar loop")
+        }
+        indentationLevel += 1
+
+        printAssignInitialValue(s"$assignTarget($iteratorName)", elementRep, depth + 1)
+
+        indentationLevel -= 1
+        println("end loop;")
+      case struct: StructRep =>
+        for (component <- struct.components) {
+          printAssignInitialValue(assignTarget + "." + component.name, component.typeRep, depth + 1)
+        }
+      case _: TimeRep =>
+        println(s"$assignTarget := $typeName(Time_First);")
+      case _: TimeSpanRep =>
+        println(s"$assignTarget := $typeName(Time_Span_Zero);")
+      case _: VariableOpaqueRep =>
+        println(s"$assignTarget := new $typeName'($typeName(Zero_Width_Octet_Array));")
+      case _: FixedOpaqueRep =>
+        println(s"$assignTarget := (others => 0);")
+      case x => throw new Error(s"Unimplemented assign initial value for ${x}")
+    }
+  }
+
+  /**
+   * Prints all necessary content for this message type.
+   * @param message The message.
+   */
+  private def handleMessage(message: MStructRep): Unit = {
+    assert(!message.components.exists(component => component.typeRep.isInstanceOf[ArrayRep] && component.typeRep.isAnonymous))
+
+    val voidFlag = message.isVoid
+
+    if (voidFlag && message.components.size > 1) {
+      System.out.println("Can't have multiple message struct")
+      System.out.println("parameters included with void.")
+      return
+    }
+
+    val direction = message.direction
+
+    printEncode(message)
+    printUnsafeSend(message, direction, withStatus = true)
+    printUnsafeSend(message, direction, withStatus = false)
+    printSafeSend(message, direction, withStatus = true)
+    printSafeSend(message, direction, withStatus = false)
+    if (!voidFlag)
+      printDecode(message)
+    println()
+  }
+
+  /**
+   * Prints the given content with the correct indentation and
+   * a newline at the end.
+   *
+   * @param content The string to print, doesn't include the newline.
+   */
+  private def println(content: String = ""): Unit = {
+    doIndentation()
+    out.println(content)
+  }
+
+  /**
+   * Prints the given content with one less indentation than
+   * the current and a newline at the end. Doesn't affect the
+   * global indentation.
+   * @param content The content to print, doesn't include the newline.
+   */
+  private def printlnOne(content: String): Unit = {
+    for (_ <- 0 until indentationLevel - 1) {
+      out.print("   ")
+    }
+    out.println(content)
   }
 }

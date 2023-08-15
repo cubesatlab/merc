@@ -8,7 +8,17 @@ grammar MXDR;
 // facilities supporting the definition of types with range constraints.
 
 specification:
-    definition*;
+    dependency_stmt* definition*;
+
+// Dependency syntax
+//----------------
+dependency_stmt:
+    receives;
+
+package_name:
+    IDENTIFIER ('.' IDENTIFIER)*;
+receives:
+    RECEIVES LBRACE IDENTIFIER (COMMA IDENTIFIER)* RBRACE FROM package_name;
 
 // Definition Syntax
 // -----------------
@@ -16,28 +26,29 @@ definition:
     type_def | constant_def | encoder_def | decoder_def | line;
 
 type_def:
-      TYPEDEF declaration RANGE range_constraint SEMI
-    | TYPEDEF declaration subtype_spec RANGE range_constraint SEMI
-    | TYPEDEF declaration SEMI
-    | ENUM IDENTIFIER enum_body SEMI
-    | STRUCT IDENTIFIER struct_body SEMI
-    | UNION IDENTIFIER union_body SEMI
-    | MESSAGE STRUCT (LARROW | RARROW) IDENTIFIER struct_body (condition)? SEMI;
+      TYPEDEF declaration (subtype_spec)? (RANGE range_constraint)? SEMI #Basic_TypeDef
+    | ENUM IDENTIFIER enum_body SEMI #Enum_TypeDef
+    | STRUCT IDENTIFIER struct_body SEMI #Struct_TypeDef
+    | UNION IDENTIFIER union_body SEMI #Union_TypeDef
+    | MESSAGE STRUCT (LARROW | RARROW) IDENTIFIER struct_body (condition)? SEMI #Message_TypeDef
+    ;
 
 range_constraint:
-      CONSTANT DOTDOT CONSTANT
-    | CONSTANT DOTDOT IDENTIFIER;
+      constLowerBound=CONSTANT DOTDOT constUpperBound=CONSTANT
+    | constLowerBound=CONSTANT DOTDOT varUpperBound=IDENTIFIER
+    | varLowerBound=IDENTIFIER DOTDOT constUpperBound=CONSTANT
+    ;
 
 subtype_spec:
-      IS IDENTIFIER
-    | IS NATURAL;
+      IS typeName=IDENTIFIER
+    | IS typeName=NATURAL;
 
 condition
     :   (WITH INVARIANT RPOINT expression COMMA)* WITH INVARIANT RPOINT expression;
 
 constant_def:
-      CONST IDENTIFIER EQUALS CONSTANT SEMI
-    | CONST IDENTIFIER IS IDENTIFIER EQUALS CONSTANT SEMI;
+      CONST name=IDENTIFIER EQUALS CONSTANT SEMI
+    | CONST name=IDENTIFIER IS typeName=IDENTIFIER EQUALS CONSTANT SEMI;
 
 encoder_def:
     ENCODER IDENTIFIER LPARENS declaration (COMMA declaration)* RPARENS SEMI;
@@ -52,15 +63,16 @@ line:
 // ------------------
 declaration:
       type_specifier IDENTIFIER
-    | type_specifier IDENTIFIER EQUALS CONSTANT
-    | type_specifier IDENTIFIER LBRACKET value RBRACKET
-    | type_specifier IDENTIFIER LANGLE value? RANGLE
-    | OPAQUE IDENTIFIER LBRACKET value RBRACKET
-    | OPAQUE IDENTIFIER LANGLE value? RANGLE
-    | STRING IDENTIFIER LANGLE value? RANGLE
-    | IDENTIFIER LANGLE value? RANGLE
-    | type_specifier STAR IDENTIFIER
-    | VOID;
+    | type_specifier IDENTIFIER EQUALS CONSTANT // Default value
+    | type_specifier IDENTIFIER LBRACKET value RBRACKET // Fixed array
+    | type_specifier IDENTIFIER LANGLE value? RANGLE // Variable array
+    | OPAQUE IDENTIFIER LBRACKET value RBRACKET // Fixed opaque
+    | OPAQUE IDENTIFIER LANGLE value? RANGLE // Variable opaque
+    | STRING IDENTIFIER LANGLE value? RANGLE // Variable string
+    | IDENTIFIER LANGLE value? RANGLE // Used for type_def with a subtype
+    | type_specifier STAR IDENTIFIER // Optional
+    | VOID
+    ;
 
 type_specifier:
       UNSIGNED? INT
@@ -152,6 +164,8 @@ UNION     : 'union';
 UNSIGNED  : 'unsigned';
 VOID      : 'void';
 WITH      : 'with';
+RECEIVES  : 'receives';
+FROM      : 'from';
 
 // -------
 // Symbols
