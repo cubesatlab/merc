@@ -1,3 +1,4 @@
+TODO: After writing this, I realize it is a little redundant with the other documentation here which is written in tex. This document is newer than the tex is (8/17/23). Figure out what can be removed.
 
 Merc is a tool that generates CubedOS module APIs implementations from specification files. The specification files are written in a modified version of XDR (MXDR) described in this document. Merc produces Ada header and body files which are used by CubedOS modules to communicate.
 
