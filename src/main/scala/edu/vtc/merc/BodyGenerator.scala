@@ -89,6 +89,7 @@ class BodyGenerator(
       val prefixString = if (modulePrefix.nonEmpty) modulePrefix + "." else ""
       val newLine = line.replace("%MODULENAME%", prefixString + moduleName)
                         .replace("%FILEBASENAME%", fileName)
+                        .replace("%FILENAME%", fileName)
       if (line.contains("%BULK%")) {
         indentationLevel += 1
         generateBulk()
