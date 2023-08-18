@@ -103,6 +103,7 @@ class BodyGenerator(
 
   private def generateBulk(): Unit = {
     println("procedure Free is new Ada.Unchecked_Deallocation(String, String_Ptr);")
+    println("procedure Free is new Ada.Unchecked_Deallocation(Octet_Array, Octet_Array_Ptr);")
     mxdrTree.getItems[MXDREntity]().foreach {
       case x: MStructRep =>
         handleMessage(x)
@@ -661,7 +662,8 @@ class BodyGenerator(
         println(s"Final_Size : constant XDR_Unsigned := $sizeStore;")
         println(s"subtype Definite_Octet_Array is $typeName(0 .. Natural(Final_Size) - 1);")
         printlnOne("begin")
-        println(s"${assignTarget} := new Definite_Octet_Array'(others => 0);")
+        println(s"Free($assignTarget);")
+        println(s"$assignTarget := new Definite_Octet_Array'(others => 0);")
         indentationLevel -= 1
         println("end;")
 
