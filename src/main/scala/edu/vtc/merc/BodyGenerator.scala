@@ -531,7 +531,6 @@ class BodyGenerator(
     }
     def else_return(): Unit = {
       printlnOne("else")
-      println("pragma Assert(Boolean'(False));")
       println("Decode_Status := Malformed;")
       println("return;")
       indentationLevel -= 1
