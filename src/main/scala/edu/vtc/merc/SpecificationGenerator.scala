@@ -179,6 +179,7 @@ class SpecificationGenerator(
           println(s"type $symbol is new ${adaFriendlyTypeName(rep)}")
           println(s"   with Dynamic_Predicate => $symbol'Length <= ${rep.maxBytes.value};")
           println(s"type ${symbol}_Ptr is access $symbol;")
+          println(s"procedure Free is new Ada.Unchecked_Deallocation($symbol, ${symbol}_Ptr);")
           println()
         case arr: ArrayRep => doArrayDef(symbol, arr)
         case rep: StringRep =>

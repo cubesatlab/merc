@@ -103,6 +103,7 @@ class BodyGenerator(
 
   private def generateBulk(): Unit = {
     println("procedure Free is new Ada.Unchecked_Deallocation(String, String_Ptr);")
+    println("procedure Free is new Ada.Unchecked_Deallocation(Octet_Array, Octet_Array_Ptr);")
     mxdrTree.getItems[MXDREntity]().foreach {
       case x: MStructRep =>
         handleMessage(x)
@@ -531,7 +532,6 @@ class BodyGenerator(
     }
     def else_return(): Unit = {
       printlnOne("else")
-      println("pragma Assert(Boolean'(False));")
       println("Decode_Status := Malformed;")
       println("return;")
       indentationLevel -= 1
@@ -560,13 +560,20 @@ class BodyGenerator(
 
         return_early_if(s"$sizeStore > ${arr.maxSize.value}")
 
-        assign(s"new ${arr.typeName.get}(0 .. $assignTarget'Length - 1)")
+        println("declare")
+        indentationLevel += 1
+        println(s"Size : constant Integer := Integer($sizeStore);")
+        println(s"subtype Definite_Array is ${arr.typeName.get}(0 .. Size - 1);")
+        printlnOne("begin")
+        printAssignInitialValue(assignTarget, arr, depth, Some(s"Size"))
 
         println(s"for $iteratorName in 0 .. Natural($sizeStore) - 1 loop -- Decoding elements of ${arr.typeName.get} of type ${arr.elementType.typeName.getOrElse(adaFriendlyTypeName(arr.elementType))}")
         indentationLevel += 1
         printDecodeForItem(s"$assignTarget($iteratorName)", tempStore, arr.elementType, depth + 1)
         indentationLevel -= 1
         println("end loop;")
+        indentationLevel -= 1
+        println("end;")
 
       case rep: EnumRep =>
         val enumName = rep.typeName.get
@@ -662,7 +669,8 @@ class BodyGenerator(
         println(s"Final_Size : constant XDR_Unsigned := $sizeStore;")
         println(s"subtype Definite_Octet_Array is $typeName(0 .. Natural(Final_Size) - 1);")
         printlnOne("begin")
-        println(s"${assignTarget} := new Definite_Octet_Array'(others => 0);")
+        println(s"Free($assignTarget);")
+        println(s"$assignTarget := new Definite_Octet_Array'(others => 0);")
         indentationLevel -= 1
         println("end;")
 
@@ -683,64 +691,125 @@ class BodyGenerator(
   }
 
   /**
+   * Gets an expression string which can be used in aggregates
+   * as a default value. For example, a variable array (outer) of fixed length (inner)
+   * arrays:
+   *
+   * definiteOuterArrayPtr := new Definite_Array'(others => $getInlineDefaultValue(inner))
+   *
+   * getInlineDefaultValue(inner) -> "(others => $getInlineDefaultValue(inner.elementType))"
+   * getInlineDefaultValue(inner.elementType) -> "0"
+   *
+   * Yielding something like (others => (others => 0))
+   *
+   * Note that variable length types must be made definite to be inline initialized.
+   * TODO: This function can't handle recursively variable structures. Maybe it should? Is that possible?
+   *
+   * @param typeRep The type to create the default for.
+   * @return An Ada expression.
+   */
+  private def getInlineDefaultValue(typeRep: Rep): String = {
+    val typeName = typeRep.typeName.getOrElse(adaFriendlyTypeName(typeRep))
+
+    typeRep match {
+      case _: NumericRep => s"$typeName'Last"
+      case _: BoolRep => "False"
+      case e: EnumRep => s"${e.typeName.get}'First"
+      case _: StringRep => "(others => ' ')"
+      case arr: VariableArrayRep => s"(others => ${getInlineDefaultValue(arr.elementType)})"
+      case arr: FixedArrayRep => s"(others => ${getInlineDefaultValue(arr.elementType)})"
+      case s: StructRep =>
+        var result = "("
+        for (component <- s.components) {
+          result += s"${component.name} => ${getInlineDefaultValue(component.typeRep)}"
+          if (component != s.components.last) result += ","
+        }
+        result + ")"
+      case _: TimeRep => "Time_First"
+      case _: TimeSpanRep => "Time_Span_Zero"
+      case _: VariableOpaqueRep => "Zero_Width_Octet_Array"
+      case _: FixedOpaqueRep => "(others => 0)"
+      case _ => throw new Error("The given type can't be inline initalized: " + typeRep)
+    }
+  }
+
+  /**
    * Prints an Ada statement assigning an arbitrary initial value to the
    * given target. The target is an out parameter of a decoder function
    * and as such should use Ada friendly types.
    * @param assignTarget The string preceding the := operator.
    * @param typeRep The type of data being assigned.
    * @param depth Counts the number of recursions.
+   * @param dimension For variable structures like variable opaque and array,
+   *                  this parameter holds the Ada variable for the now known
+   *                  characteristic dimension. If the dimension is not yet known,
+   *                  None. If supplied, SPARK must consider it a non-variable.
    */
-  private def printAssignInitialValue(assignTarget: String, typeRep: Rep, depth: Int = 0): Unit = {
+  private def printAssignInitialValue(assignTarget: String, typeRep: Rep, depth: Int = 0, dimension: Option[String] = None): Unit = {
     val iteratorName = "I" + depth.toString
 
     val typeName = typeRep.typeName.getOrElse(adaFriendlyTypeName(typeRep))
 
     typeRep match {
       case _: NumericRep =>
-        println(s"$assignTarget := $typeName'Last;")
+        println(s"$assignTarget := ${getInlineDefaultValue(typeRep)};")
       case _: BoolRep =>
-        println(s"$assignTarget := False;")
-      case e: EnumRep =>
-        println(s"$assignTarget := ${e.typeName.get}'First;")
+        println(s"$assignTarget := ${getInlineDefaultValue(typeRep)};")
+      case _: EnumRep =>
+        println(s"$assignTarget := ${getInlineDefaultValue(typeRep)};")
       case s: StringRep =>
         println("declare")
         indentationLevel += 1
         println(s"subtype Definite_String is ${s.typeName.getOrElse("String")}(1..0);")
         printlnOne("begin")
-        println(s"$assignTarget := new Definite_String'(others => ' ');")
+        println(s"$assignTarget := new Definite_String'${getInlineDefaultValue(typeRep)};")
         indentationLevel -= 1
         println("end;")
-      case arr: ArrayRep =>
+      case arr: FixedArrayRep =>
         val elementRep = arr.elementType
 
-        doIndentation()
-        out.print(s"for $iteratorName in ")
+        println(s"$assignTarget := ${getInlineDefaultValue(typeRep)};")
+//
+//        println(s"for $iteratorName in ${assignTarget}'Range loop")
+//        indentationLevel += 1
+//
+//        printAssignInitialValue(s"$assignTarget($iteratorName)", elementRep, depth + 1)
+//
+//        indentationLevel -= 1
+//        println("end loop;")
 
-        arr match {
-          case _: FixedArrayRep =>
-            out.println(s"${assignTarget}'Range loop")
-          case _: VariableArrayRep =>
-            val sizeVar = assignTarget + "'Length - 1"
-            out.println(s"0 .. $sizeVar loop")
-        }
+      case arr: VariableArrayRep =>
+        val elementRep = arr.elementType
+
+        println("declare")
+        indentationLevel += 1
+        println(s"subtype Definite_Array is ${arr.typeName.get}(0 .. ${dimension.getOrElse('0')} - 1);")
+        printlnOne("begin")
+        println(s"$assignTarget := new Definite_Array'${getInlineDefaultValue(typeRep)};")
+        indentationLevel -= 1
+        println("end;")
+
+        val sizeVar = assignTarget + "'Length - 1"
+        println(s"for $iteratorName in 0 .. $sizeVar loop")
         indentationLevel += 1
 
         printAssignInitialValue(s"$assignTarget($iteratorName)", elementRep, depth + 1)
 
         indentationLevel -= 1
         println("end loop;")
+
       case struct: StructRep =>
         for (component <- struct.components) {
           printAssignInitialValue(assignTarget + "." + component.name, component.typeRep, depth + 1)
         }
       case _: TimeRep =>
-        println(s"$assignTarget := $typeName(Time_First);")
+        println(s"$assignTarget := $typeName(${getInlineDefaultValue(typeRep)});")
       case _: TimeSpanRep =>
-        println(s"$assignTarget := $typeName(Time_Span_Zero);")
+        println(s"$assignTarget := $typeName(${getInlineDefaultValue(typeRep)});")
       case _: VariableOpaqueRep =>
-        println(s"$assignTarget := new $typeName'($typeName(Zero_Width_Octet_Array));")
+        println(s"$assignTarget := new $typeName'($typeName(${getInlineDefaultValue(typeRep)}));")
       case _: FixedOpaqueRep =>
-        println(s"$assignTarget := (others => 0);")
+        println(s"$assignTarget := ${getInlineDefaultValue(typeRep)};")
       case x => throw new Error(s"Unimplemented assign initial value for ${x}")
     }
   }
