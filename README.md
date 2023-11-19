@@ -21,4 +21,8 @@ integration, such as IntelliJ can also be used.
 
 Testing Instructions
 --------------------
-The sbt 'test' command can be used for the automated tests. There are also manual integration tests which require an Ada compiler and the SPARK/Ada formal verification toolset. Both these can be found on AdaCore's website for free. The integration tests are in testData/CodeGeneration, there is another README in there with more instructions.
+
+The sbt 'test' command can be used for the automated tests. There are also manual integration
+tests which require an Ada compiler and the SPARK/Ada formal verification toolset. Both these
+can be found on AdaCore's website for free. The integration tests are in
+testData/CodeGeneration, there is another README in there with more instructions.

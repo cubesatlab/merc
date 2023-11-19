@@ -1,7 +1,7 @@
 --------------------------------------------------------------------------------
 -- FILE   : %FILENAME%
 -- SUBJECT: Specification of a package that defines the %MODULENAME% API
--- AUTHOR : (C) Copyright 2021 by Vermont Technical College
+-- AUTHOR : (C) Copyright 2024 by Vermont State University
 --
 -- All the subprograms in this package are task safe.
 --

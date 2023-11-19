@@ -1,5 +1,11 @@
 package edu.vtc.merc
 
+// TODO: This is broken.
+// Eric moved symbol table population into a separate visitation step without a reporter.
+// As a result, errors due to, for example, duplicate symbols, cause Merc to crash rather
+// than reporting the error. See my comments in SemanticSpec.scala. The SymbolTablePopulator
+// class needs to be removed/merged back into Semantic Analyzer. The two operations can't
+// be separated.
 class SemanticAnalyzer(
   nameOfFile : String,
   symbolTable: BasicSymbolTable,

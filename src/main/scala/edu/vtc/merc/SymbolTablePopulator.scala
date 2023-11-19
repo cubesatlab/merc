@@ -2,12 +2,13 @@ package edu.vtc.merc
 
 import edu.vtc.merc.MXDRParser._
 import edu.vtc.merc.MXDRReadingHelpers.{resolveConstant, resolveValue}
-import edu.vtc.merc.TypeRep.{ArrayRep, BoolRep, ConstRep, ContinuousRep, DoubleRep, EnumRep, EnumValue, FixedArrayRep, FixedOpaqueRep, FloatRep, HyperRep, IntRep, IntegralRep, MStructRep, NumericRep, OpaqueRep, QuadRep, RangeConstraint, Rep, StringRep, StructComponent, StructRep, TimeRep, TimeSpanRep, UHyperRep, UIntRep, VariableArrayRep, VariableOpaqueRep, VoidRep, anonymousConstant}
-import edu.vtc.merc._
+import edu.vtc.merc.TypeRep.{
+  ArrayRep, BoolRep, ConstRep, ContinuousRep, DoubleRep, EnumRep, EnumValue, FixedArrayRep, FixedOpaqueRep,
+  FloatRep, HyperRep, IntRep, IntegralRep, MStructRep, NumericRep, OpaqueRep, QuadRep, RangeConstraint, Rep,
+  StringRep, StructComponent, StructRep, TimeRep, TimeSpanRep, UHyperRep, UIntRep, VariableArrayRep,
+  VariableOpaqueRep, VoidRep, anonymousConstant}
 import org.antlr.v4.runtime.Token
 
-import java.util.Optional
-import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 
 /**
@@ -67,7 +68,6 @@ class SymbolTablePopulator(
    * Reads a struct_body and creates a rep obj to
    * represent its components.
    * @return The struct's components
-   * @effects Nothing.
    */
   def readStructBody(ctx: Struct_bodyContext): List[StructComponent] = {
     var components = List[StructComponent]()
@@ -123,7 +123,6 @@ class SymbolTablePopulator(
    *                     If false, the declaration isn't a type definition,
    *                     and no type name will be recorded.
    * @return A type representation.
-   * @effects Nothing.
    */
   private def readDeclarationType(ctx: DeclarationContext, range: Option[RangeConstraint], subtypeName: Option[String], isTypeDef: Boolean): Rep = {
     if (ctx.VOID != null) return VoidRep
@@ -299,7 +298,6 @@ class SymbolTablePopulator(
    * @param ctx
    * @param typeRep The type to assign to the endpoints of the range.
    * @return
-   * @effects Nothing.
    */
   private def readRangeConstraint(ctx: Range_constraintContext, typeRep: NumericRep): RangeConstraint = {
 

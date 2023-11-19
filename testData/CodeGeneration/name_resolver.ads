@@ -1,7 +1,7 @@
 --------------------------------------------------------------------------------
 -- FILE    : name_resolver.ads
 -- SUBJECT : Specification of a package holding Domain IDs and Module IDs
--- AUTHOR  : (C) Copyright 2023 by Vermont Technical College
+-- AUTHOR  : (C) Copyright 2024 by Vermont State University
 --------------------------------------------------------------------------------
 pragma SPARK_Mode (On);
 with CubedOS.Message_Types; use CubedOS.Message_Types;
