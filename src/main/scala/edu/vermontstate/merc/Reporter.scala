@@ -1,4 +1,4 @@
-package edu.vtc.merc
+package edu.vermontstate.merc
 
 /**
  * This trait describes the interface to error reporting objects. Different implementations

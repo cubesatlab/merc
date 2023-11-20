@@ -1,4 +1,4 @@
-package edu.vtc.merc
+package edu.vermontstate.merc
 
 import org.scalatest.*
 import flatspec.*

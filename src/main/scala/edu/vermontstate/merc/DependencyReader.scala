@@ -1,8 +1,7 @@
-package edu.vtc.merc
+package edu.vermontstate.merc
 
-import edu.vtc.merc.MXDRParser.*
-
-import scala.collection.mutable.Set
+import scala.collection.mutable
+import MXDRParser.*
 
 /**
  * Reads mxdr file, collecting info about dependencies.
@@ -13,20 +12,20 @@ class DependencyReader extends MXDRBaseVisitor[Void] {
    * Doesn't include "_Msg", only the name of the message type.
    * "Tick_Reply", "Ping_Request".
    */
-  val receiveMessages = Set[String]()
+  val receiveMessages: mutable.Set[String] = mutable.Set[String]()
   /**
    * The other API packages that this MXDR references.
    * These are valid Ada packages.
    * "CubedOS.Time_Server"
    * Doesn't include ".API"
    */
-  val dependsOn = Set[String]()
+  val dependsOn: mutable.Set[String] = mutable.Set[String]()
 
   override def visitReceives(ctx: ReceivesContext): Void = {
     // Read the message dependencies into the list
     val count = ctx.IDENTIFIER().size
     for (i <- 0 until count) {
-      receiveMessages.add(ctx.IDENTIFIER(i).getSymbol().getText())
+      receiveMessages.add(ctx.IDENTIFIER(i).getSymbol.getText)
     }
 
     visitChildren(ctx)
@@ -35,10 +34,10 @@ class DependencyReader extends MXDRBaseVisitor[Void] {
   }
 
   override def visitPackage_name(ctx: Package_nameContext): Void = {
-    var result = ctx.IDENTIFIER(0).getSymbol().getText()
+    var result = ctx.IDENTIFIER(0).getSymbol.getText
     val count = ctx.IDENTIFIER().size
     for (i <- 1 until count) {
-      result += "." + ctx.IDENTIFIER(i).getSymbol().getText()
+      result += "." + ctx.IDENTIFIER(i).getSymbol.getText
     }
     dependsOn.add(result)
 

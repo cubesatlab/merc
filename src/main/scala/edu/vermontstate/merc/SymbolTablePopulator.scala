@@ -1,8 +1,8 @@
-package edu.vtc.merc
+package edu.vermontstate.merc
 
-import edu.vtc.merc.MXDRParser._
-import edu.vtc.merc.MXDRReadingHelpers.{resolveConstant, resolveValue}
-import edu.vtc.merc.TypeRep.{
+import MXDRParser._
+import MXDRReadingHelpers.{resolveConstant, resolveValue}
+import TypeRep.{
   ArrayRep, BoolRep, ConstRep, ContinuousRep, DoubleRep, EnumRep, EnumValue, FixedArrayRep, FixedOpaqueRep,
   FloatRep, HyperRep, IntRep, IntegralRep, MStructRep, NumericRep, OpaqueRep, QuadRep, RangeConstraint, Rep,
   StringRep, StructComponent, StructRep, TimeRep, TimeSpanRep, UHyperRep, UIntRep, VariableArrayRep,

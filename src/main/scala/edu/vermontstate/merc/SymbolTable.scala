@@ -1,6 +1,6 @@
-package edu.vtc.merc
+package edu.vermontstate.merc
 
-import edu.vtc.merc.TypeRep.StructComponent
+import TypeRep.StructComponent
 
 /**
  * The interface to symbol tables.

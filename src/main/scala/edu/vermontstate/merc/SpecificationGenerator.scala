@@ -1,8 +1,8 @@
-package edu.vtc.merc
+package edu.vermontstate.merc
 
-import edu.vtc.merc.AdaGeneratorCommon.{adaFriendlyTypeName, assertMXDRTreeAcceptableForAda, passedByReference}
-import edu.vtc.merc.MXDRReadingHelpers.resolveValue
-import edu.vtc.merc.TypeRep._
+import edu.vermontstate.merc.TypeRep.{ArrayRep, ConstRep, ContinuousRep, EnumRep, EnumValue, FixedArrayRep, FixedOpaqueRep, MStructRep, MXDREntity, Ranged, Rep, StringRep, StructComponent, StructRep, VariableArrayRep, VariableOpaqueRep}
+import AdaGeneratorCommon.{adaFriendlyTypeName, assertMXDRTreeAcceptableForAda, passedByReference}
+import MXDRReadingHelpers.resolveValue
 
 import java.io.File
 

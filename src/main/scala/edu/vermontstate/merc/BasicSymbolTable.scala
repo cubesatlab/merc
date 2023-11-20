@@ -1,7 +1,7 @@
-package edu.vtc.merc
+package edu.vermontstate.merc
 
-import edu.vtc.merc.SymbolTable.{DuplicateObjectNameException, DuplicateTypeNameException, UnknownObjectNameException, UnknownTypeNameException}
-import edu.vtc.merc.TypeRep.{ArrayRep, StructComponent, ConstRep, FixedArrayRep, MStructRep, MXDREntity, Rep, StructRep, StructuredRep}
+import edu.vermontstate.merc.TypeRep.{ConstRep, FixedArrayRep, MStructRep, MXDREntity, Rep, StructRep, StructuredRep}
+import SymbolTable.{DuplicateObjectNameException, DuplicateTypeNameException, UnknownObjectNameException, UnknownTypeNameException}
 
 import scala.collection.mutable
 
@@ -156,7 +156,7 @@ class BasicSymbolTable extends SymbolTable {
    * @return Iterable for all the unstructured type names
    */
   override def getTypeNames: Iterable[String] = {
-    types.filter(rep => !rep.isInstanceOf[StructuredRep]).keys
+    types.filter(element => !element._2.isInstanceOf[StructuredRep]).keys
   }
 
   /**

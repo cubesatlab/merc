@@ -1,4 +1,4 @@
-package edu.vtc.merc
+package edu.vermontstate.merc
 
 /**
   * Instances of this case class are used to hold expected messages during testing.

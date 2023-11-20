@@ -1,7 +1,7 @@
-package edu.vtc.merc
+package edu.vermontstate.merc
 
-import edu.vtc.merc.AdaGeneratorCommon.{adaFriendlyTypeName, passedByReference}
-import edu.vtc.merc.TypeRep._
+import edu.vermontstate.merc.TypeRep.{ArrayRep, MStructRep, OpaqueRep, StringRep, VoidRep}
+import AdaGeneratorCommon.{adaFriendlyTypeName, passedByReference}
 
 import java.io.PrintStream
 

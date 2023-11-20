@@ -1,4 +1,4 @@
-package edu.vtc.merc
+package edu.vermontstate.merc
 
 class MercSpec extends UnitSpec {
 

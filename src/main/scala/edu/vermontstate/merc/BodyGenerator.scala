@@ -1,7 +1,7 @@
-package edu.vtc.merc
+package edu.vermontstate.merc
 
-import edu.vtc.merc.AdaGeneratorCommon.{adaFriendlyTypeName, xdrTypeName}
-import edu.vtc.merc.TypeRep._
+import edu.vermontstate.merc.TypeRep.{ArrayRep, BoolRep, ContinuousRep, EnumRep, FixedArrayRep, FixedOpaqueRep, MStructRep, MXDREntity, NumericRep, OpaqueRep, Rep, StringRep, StructComponent, StructRep, TimeRep, TimeSpanRep, VariableArrayRep, VariableOpaqueRep, VoidRep}
+import AdaGeneratorCommon.{adaFriendlyTypeName, xdrTypeName}
 
 import java.io.File
 

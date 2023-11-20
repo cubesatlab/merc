@@ -1,6 +1,7 @@
-package edu.vtc.merc
+package edu.vermontstate.merc
 
-import edu.vtc.merc.TypeRep.{ArrayRep, ConstRep, MXDREntity, Rep, StructRep}
+import edu.vermontstate.merc.TypeRep.{ArrayRep, ConstRep, MXDREntity, Rep, StructRep}
+import TypeRep.{ArrayRep, ConstRep, MXDREntity, Rep, StructRep}
 
 import scala.annotation.unused
 import scala.collection.mutable.ListBuffer

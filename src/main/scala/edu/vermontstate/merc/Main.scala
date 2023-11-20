@@ -1,6 +1,6 @@
-package edu.vtc.merc
+package edu.vermontstate.merc
 
-import edu.vtc.merc.AdaGeneratorCommon.processTreeForAda
+import AdaGeneratorCommon.processTreeForAda
 import org.antlr.v4.runtime.{CharStreams, CommonTokenStream}
 
 import java.io.PrintStream

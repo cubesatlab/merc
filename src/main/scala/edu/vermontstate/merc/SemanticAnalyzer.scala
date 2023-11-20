@@ -1,4 +1,4 @@
-package edu.vtc.merc
+package edu.vermontstate.merc
 
 // TODO: This is broken.
 // Eric moved symbol table population into a separate visitation step without a reporter.

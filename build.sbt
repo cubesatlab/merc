@@ -1,7 +1,7 @@
 
 enablePlugins(Antlr4Plugin)
 
-ThisBuild / organization  := "edu.vtc"
+ThisBuild / organization  := "edu.vermontstate"
 ThisBuild / version       := "0.1.0-SNAPSHOT"
 ThisBuild / scalaVersion  := "2.13.8"
 ThisBuild / scalacOptions :=
@@ -24,7 +24,7 @@ lazy val merc = (project in file("."))
     name := "Merc",
 
     Antlr4 / antlr4Version     := "4.9.3",
-    Antlr4 / antlr4PackageName := Some("edu.vtc.merc"),
+    Antlr4 / antlr4PackageName := Some("edu.vermontstate.merc"),
     Antlr4 / antlr4GenListener := true,
     Antlr4 / antlr4GenVisitor  := true
   )

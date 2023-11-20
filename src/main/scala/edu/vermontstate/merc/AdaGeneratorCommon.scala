@@ -1,6 +1,6 @@
-package edu.vtc.merc
+package edu.vermontstate.merc
 
-import edu.vtc.merc.TypeRep._
+import TypeRep._
 
 /**
  * Contains utility functions common to both Ada generator classes.

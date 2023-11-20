@@ -1,6 +1,7 @@
-package edu.vtc.merc
+package edu.vermontstate.merc
 
-import edu.vtc.merc.TypeRep.{ConstRep, NumericRep, Rep, UIntRep, anonymousConstant}
+import edu.vermontstate.merc.TypeRep.{ConstRep, NumericRep, Rep}
+import TypeRep.{ConstRep, NumericRep, Rep, UIntRep, anonymousConstant}
 
 /**
  * Contains several helper functions for parsing the MXDR syntax

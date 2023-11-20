@@ -1,4 +1,4 @@
-package edu.vtc.merc
+package edu.vermontstate.merc
 
 class TestReporter(
   expectedErrors  : Array[ExpectedMessage],
