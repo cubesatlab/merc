@@ -326,7 +326,7 @@ class SymbolTablePopulator(
       reporter.reportError(
         ctx.DOTDOT.getSymbol.getLine,
         ctx.DOTDOT.getSymbol.getCharPositionInLine + 1,
-        "Invalid range constraint: Require lower bound <= upper bound")
+        "Invalid range constraint: Require lower bound <= upper bound.")
     }
 
     // TODO: Check that the provided endpoints are of an acceptable type
@@ -368,7 +368,18 @@ class SymbolTablePopulator(
     else None
 
     val typeRep = readDeclarationType(ctx.declaration, rangeConstraint, subtype, isTypeDef=true)
-    symbolTable.addType(name, typeRep)
+    // The fact that we are catching this exception immediately is a strong indication that
+    // addType() should return a Try (or an error code).
+    try {
+      symbolTable.addType(name, typeRep)
+    }
+    catch {
+      case e: SymbolTable.DuplicateTypeNameException =>
+        reporter.reportError(
+          ctx.declaration.IDENTIFIER.getSymbol.getLine,
+          ctx.declaration.IDENTIFIER.getSymbol.getCharPositionInLine + 1,
+          e.getMessage)
+    }
   }
 
   /**

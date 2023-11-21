@@ -19,8 +19,9 @@ object Main {
     * switch itself (no space) and extends to the next non-quoted space on the command line.
     *
     * @param args The command line as passed to the main method.
+    * 
     * @return None if there is an error in the command line; otherwise return a set of switches
-    *         together with the source file name(s).
+    * together with the source file name(s).
     */
   private[merc] def analyzeCommandLine(args: Array[String]): Option[(Map[Char, String], String)] = {
     if (args.length < 1) {
@@ -81,8 +82,15 @@ object Main {
     myTable.visit(tree)
 
     // Check the tree for semantic errors.
-    val myAnalyzer  = new SemanticAnalyzer(sourceName, symbolTable, reporter)
-    myAnalyzer.visit(tree)
+    //
+    // Note that if populating the symbol table found errors, we don't bother with semantic
+    // analysis. This reduces the number of spurious errors reported, but it also means that
+    // semantic errors won't be reported if the symbol table is incomplete.
+    //
+    if (reporter.errorCount == 0) {
+      val myAnalyzer = new SemanticAnalyzer(symbolTable, reporter)
+      myAnalyzer.visit(tree)
+    }
 
     val errorCount = reporter.errorCount
 
@@ -115,10 +123,10 @@ object Main {
     val modulePrefix =
       (if (baseFileName.contains("-")) {
         hasDash = true
-          baseFileName.substring(0, baseFileName.lastIndexOf('-'))
+        baseFileName.substring(0, baseFileName.lastIndexOf('-'))
 
-      } else "")
-        .replace('-', '.')
+       }
+       else "").replace('-', '.')
 
     val moduleName = baseFileName.substring(modulePrefix.length + (if (hasDash) 1 else 0), baseFileName.length)
 

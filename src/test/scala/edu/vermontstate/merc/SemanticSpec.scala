@@ -11,15 +11,13 @@ class SemanticSpec extends UnitSpec {
     expectedWarnings: Array[ExpectedMessage])
 
   "The SemanticAnalyzer" should "detect semantic errors in MXDR" in {
-    val testCases = Array[TestCase]( )
-
-    // This test cases crashes and fixing it will require a substantial amount of reworking.
-    // I'm commenting it out for now so Merc will build, at least.
-    //
-    //val testCases = Array(
-    //  TestCase("0001.mxdr",
-    //    Array(ExpectedMessage(5, 22, "T1 type has already been defined.")),
-    //    Array()))
+    val testCases = Array(
+      TestCase("0001.mxdr",
+        Array(
+          ExpectedMessage( 5, 22, "Type T1 has already been defined."),
+          ExpectedMessage( 8, 13, "Accept is an Ada/SPARK reserved word and cannot be used as an identifier."),
+          ExpectedMessage(15, 25, "Invalid range constraint: Require lower bound <= upper bound.")),
+        Array()))
 
     for (testCase <- testCases) {
       val TestCase(fileName, expectedErrors, expectedWarnings) = testCase
@@ -36,9 +34,14 @@ class SemanticSpec extends UnitSpec {
       val symbolTable = new BasicSymbolTable
       val reporter    = new TestReporter(expectedErrors, expectedWarnings)
       val myTable     = new SymbolTablePopulator(symbolTable, reporter)
-      myTable.visit(tree)  // Crashes with an unhandled exception from the BasicSymbolTable that is never reported.
-      val myAnalyzer  = new SemanticAnalyzer(fileName, symbolTable, reporter)
-      myAnalyzer.visit(tree)
+      myTable.visit(tree)
+
+      // As with the main program, we don't bother with semantic analysis if populating the
+      // symbol table generates errors.
+      if (reporter.errorCount == 0) {
+        val myAnalyzer = new SemanticAnalyzer(symbolTable, reporter)
+        myAnalyzer.visit(tree)
+      }
     }
   }
 }

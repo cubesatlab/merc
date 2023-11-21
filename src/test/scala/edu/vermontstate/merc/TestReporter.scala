@@ -4,6 +4,7 @@ class TestReporter(
   expectedErrors  : Array[ExpectedMessage],
   expectedWarnings: Array[ExpectedMessage]) extends Reporter {
 
+  var errorCount = 0
   var nextError = 0
   var nextWarning = 0
 
@@ -16,6 +17,7 @@ class TestReporter(
       ExpectedMessage(line, column, message) == expectedErrors(nextError),
       s"Got: ${ExpectedMessage(line, column, message)}, Expected: ${expectedErrors(nextError)}")
     nextError += 1
+    errorCount += 1
   }
 
 

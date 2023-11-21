@@ -34,7 +34,7 @@ class BasicSymbolTable extends SymbolTable {
    */
   def addType(symbol: String, rep: Rep): Unit = {
     if (types.contains(symbol))
-      throw new DuplicateTypeNameException(symbol + " type has already been defined.")
+      throw new DuplicateTypeNameException("Type " + symbol + " has already been defined.")
     types(symbol) = rep
     order.addOne(symbol)
   }
@@ -179,7 +179,7 @@ class BasicSymbolTable extends SymbolTable {
   /**
    * Gets the constant referred to by the given symbol.
    * @param symbol The name of the constant.
-   * @param T The type of the constant. If unknown, just use Rep.
+   * @tparam T The type of the constant. If unknown, just use Rep.
    *          If you know it's some type of number, use NumericRep.
    * @return The found constant.
    */

@@ -1,5 +1,15 @@
+// These tests pertain to semantic checks detected by the SymbolTablePopulator.
 
 // Are double declarations detected?
-
 typedef int T1;
 typedef unsigned int T1;  // Error!
+
+// What about uses of Ada/SPARK reserved words?
+typedef int Accept;  // Error!
+
+// TODO: Implement usage of these names as errors!
+// What about uses of Ada/SPARK names from package Standard?
+// typedef int Integer;  // Error!
+
+// What about range constraints that have an invalid range?
+typedef int T2 range 20 .. 10;  // Error!
