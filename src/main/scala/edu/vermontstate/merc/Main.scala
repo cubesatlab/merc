@@ -77,7 +77,7 @@ object Main {
     val reporter    = new BasicConsoleReporter
 
     // Populate the symbol table
-    val myTable = new SymbolTablePopulator(sourceName, symbolTable, reporter)
+    val myTable = new SymbolTablePopulator(symbolTable, reporter)
     myTable.visit(tree)
 
     // Check the tree for semantic errors.

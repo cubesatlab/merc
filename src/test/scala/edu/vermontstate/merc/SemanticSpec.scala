@@ -35,7 +35,7 @@ class SemanticSpec extends UnitSpec {
       // Walk the tree created during the parse and analyze it for semantic errors.
       val symbolTable = new BasicSymbolTable
       val reporter    = new TestReporter(expectedErrors, expectedWarnings)
-      val myTable     = new SymbolTablePopulator(fileName, symbolTable, reporter)
+      val myTable     = new SymbolTablePopulator(symbolTable, reporter)
       myTable.visit(tree)  // Crashes with an unhandled exception from the BasicSymbolTable that is never reported.
       val myAnalyzer  = new SemanticAnalyzer(fileName, symbolTable, reporter)
       myAnalyzer.visit(tree)

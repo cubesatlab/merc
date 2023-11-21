@@ -1,25 +1,20 @@
 package edu.vermontstate.merc
 
-import MXDRParser._
-import MXDRReadingHelpers.{resolveConstant, resolveValue}
-import TypeRep.{
-  ArrayRep, BoolRep, ConstRep, ContinuousRep, DoubleRep, EnumRep, EnumValue, FixedArrayRep, FixedOpaqueRep,
-  FloatRep, HyperRep, IntRep, IntegralRep, MStructRep, NumericRep, OpaqueRep, QuadRep, RangeConstraint, Rep,
-  StringRep, StructComponent, StructRep, TimeRep, TimeSpanRep, UHyperRep, UIntRep, VariableArrayRep,
-  VariableOpaqueRep, VoidRep, anonymousConstant}
+import scala.collection.mutable.ListBuffer
 import org.antlr.v4.runtime.Token
 
-import scala.collection.mutable.ListBuffer
+import MXDRParser.*
+import MXDRReadingHelpers.{resolveConstant, resolveValue}
+import TypeRep.*
 
 /**
- * Reads out symbols from the MXDR file, populating the given symbol table.
- * Also reports some semantic errors.
+ * Instances of this class visit the parse tree and populate the given symbol table. Certain
+ * semantic errors related to symbol declarations are also reported.
+ *
+ * @param symbolTable The symbol table to populate.
+ * @param reporter The reporter object through which diagnostics are reported.
  */
 class SymbolTablePopulator(
-  nameOfFile : String,
-  /**
-   * The table to populate
-   */
   symbolTable: BasicSymbolTable,
   reporter   : Reporter) extends MXDRBaseVisitor[Unit] {
 
@@ -50,8 +45,8 @@ class SymbolTablePopulator(
   }
 
   /**
-   * If the given word is a reserved word, reports it to
-   * the reporter.
+   * If the given word is a reserved word, report it.
+   *
    * @param token The word to check.
    */
   private def reportIfReserved(token: Token): Unit = {
@@ -59,80 +54,80 @@ class SymbolTablePopulator(
       reporter.reportError(
         token.getLine,
         token.getCharPositionInLine + 1,
-        token.getText + " is a reserved SPARK Ada word."
+        token.getText + " is an Ada/SPARK reserved word and cannot be used as an identifier."
       )
     }
   }
 
   /**
-   * Reads a struct_body and creates a rep obj to
-   * represent its components.
-   * @return The struct's components
+   * Reads a struct_body and creates a Rep obj to represent its components.
+   *
+   * @return The structure's components
    */
-  def readStructBody(ctx: Struct_bodyContext): List[StructComponent] = {
+  private def readStructureBody(ctx: Struct_bodyContext): List[StructComponent] = {
     var components = List[StructComponent]()
-    val numComponents = ctx.declaration().size()
+    val numComponents = ctx.declaration().size
     for (i <- 0 until numComponents) {
-      val decl = ctx.declaration(i)
-      val componentType = readDeclarationType(decl, None, None, isTypeDef = false)
+      val declaration = ctx.declaration(i)
+      val componentType = readDeclarationType(declaration, None, None, isTypeDef = false)
       if (componentType == VoidRep) {
-        components = components :+ (new StructComponent("Void", VoidRep, None, None))
-      } else {
-        val identifierToken = decl.IDENTIFIER().getSymbol
+        components = components :+ new StructComponent("Void", VoidRep, None, None)
+      }
+      else {
+        val identifierToken = declaration.IDENTIFIER.getSymbol
         reportIfReserved(identifierToken)
-        val name = decl.IDENTIFIER().getText
+        val name = declaration.IDENTIFIER.getText
 
-        val defaultValue: Option[String] = if (decl.children.contains(ctx.declaration(i).CONSTANT())) {
-          Some(decl.CONSTANT().getText)
+        val defaultValue: Option[String] = if (declaration.children.contains(ctx.declaration(i).CONSTANT)) {
+          Some(declaration.CONSTANT.getText)
         }
         else {
           None
         }
 
-
-        val typeName = decl.start.getText
-
+        val typeName = declaration.start.getText
         components = components.:+(new StructComponent(name, componentType, Some(typeName), defaultValue))
-
       }
     }
-
     components
   }
 
   /**
-   * Reads a declaration and creates a rep object to
-   * represent the type. If the declaration is for an
-   * array, it will return the array type.
+   * Reads a declaration and creates a Rep object to represent the type. If the declaration is
+   * for an array, it will return the array type. For example:
+   *
    * "string name<10>" -> VariableArrayRep(componentType=string, maxLength=10)
    * "bool isOn = true" -> BooleanRep()
    *
    * @param ctx The context for the declaration.
-   * @param range Optionally supplied range constraint to add to
-   *              the type. It will only be applied if the type of
-   *              the declaration is of an appropriate type. For
-   *              example, if the type is Opaque, a given range will
-   *              be ignored because Opaque's aren't numeric.
-   * @param subtypeName Optional name of the declaration's subtype if
-   *                    it has one. Only included in the result type
-   *                    if it makes sense. For example, Opaque rep doesn't
-   *                    support subtypes.
-   * @param isTypeDef If true, the declaration takes place as part of a
-   *                     type definition, the type therefore must specify a
-   *                     type name, and the IDENTIFIER will be recorded.
-   *                     If false, the declaration isn't a type definition,
-   *                     and no type name will be recorded.
+   *
+   * @param range Optionally supplied range constraint to add to the type. It will only be
+   * applied if the type of the declaration is appropriate. For example, if the type is Opaque,
+   * a given range will be ignored because Opaque is not numeric.
+   *
+   * @param subtypeName Optional name of the declaration's subtype if it has one. Only included
+   * in the result type if it makes sense. For example, Opaque Rep doesn't support subtypes.
+   *
+   * @param isTypeDef If true, the declaration takes place as part of a type definition, the
+   * type therefore must specify a type name, and the IDENTIFIER will be recorded. If false, the
+   * declaration isn't a type definition, and no type name will be recorded.
+   *
    * @return A type representation.
    */
-  private def readDeclarationType(ctx: DeclarationContext, range: Option[RangeConstraint], subtypeName: Option[String], isTypeDef: Boolean): Rep = {
+  private def readDeclarationType(
+    ctx        : DeclarationContext,
+    range      : Option[RangeConstraint],
+    subtypeName: Option[String],
+    isTypeDef  : Boolean): Rep = {
+
     if (ctx.VOID != null) return VoidRep
     // All other declaration types have an IDENTIFIER
 
-    if (ctx.IDENTIFIER() == null) {
-      throw new Error(s"Missing identfier in declaration ${ctx.getText}")
+    if (ctx.IDENTIFIER == null) {
+      throw new Error(s"Missing identifier in declaration ${ctx.getText}")
     }
 
-    val name: String = ctx.IDENTIFIER().getText
+    val name: String = ctx.IDENTIFIER.getText
 
     // The name of the type being created
     val typeName: Option[String] = if (isTypeDef) {
@@ -142,7 +137,8 @@ class SymbolTablePopulator(
     // If the declaration has <> or []
     val hasDiscriminant = ctx.RANGLE != null || ctx.RBRACKET != null
 
-    // If there is a discriminant, the IDENTIFIER names the outer structure
+    // If there is a discriminant, the IDENTIFIER names the outer structure.
+    //
     // typedef innerTypeName typeName<>
     // typedef ____ typeName/innerTypename
     val innerTypeName: Option[String] = if (hasDiscriminant)
@@ -151,125 +147,136 @@ class SymbolTablePopulator(
       else None
     else typeName
 
-    // Determine the type. If the type is incompatible with an array
-    // type, return from the function with it.
-    // For example, opaque cannot be an array
+    // Determine the type. If the type is incompatible with an array type, return from the
+    // function with it. For example, opaque cannot be an array:
+    //
     //    opaque thing<>
+    //
     // The <> belongs to the opaque, not an array.
     val typeRep: Rep = ctx.start.getText match {
-      case "Ada.Real_Time.Time" => new TimeRep(innerTypeName, subtypeName)
-      case "Ada.Real_Time.Time_Span" => new TimeSpanRep(innerTypeName, subtypeName)
+      case "Ada.Real_Time.Time" => TimeRep(innerTypeName, subtypeName)
+      case "Ada.Real_Time.Time_Span" => TimeSpanRep(innerTypeName, subtypeName)
       case "opaque" =>
         val value: Option[ConstRep[IntegralRep]] = if (ctx.value() != null) {
           if (ctx.value.IDENTIFIER != null) {
             Some(resolveConstant[IntegralRep](ctx.value.IDENTIFIER.getText, symbolTable))
-          } else {
+          }
+          else {
             Some(anonymousConstant[IntegralRep](ctx.value().getText))
           }
         } else None
 
-        if (ctx.RANGLE() == null) {
-          return new FixedOpaqueRep(typeName, value.getOrElse(anonymousConstant(ctx.value().getText)))
+        if (ctx.RANGLE == null) {
+          return FixedOpaqueRep(typeName, value.getOrElse(anonymousConstant(ctx.value().getText)))
         }
 
         if (ctx.value() != null) {
-          return new VariableOpaqueRep(typeName, value.get)
-        } else {
-          return new VariableOpaqueRep(typeName)
-        }
-
-      case "string" => {
-        val hasMaxSize = ctx.value() != null
-        if (hasMaxSize) {
-          return new StringRep(typeName, resolveValue(ctx.value().getText, symbolTable).longValue(), baseTypeName = subtypeName)
-        } else {
-          return new StringRep(typeName, baseTypeName = subtypeName)
-        }
-      }
-      case "int" => new IntRep(innerTypeName, range, baseTypeName = subtypeName)
-      case "unsigned" =>
-        if (ctx.type_specifier().stop.getText == "int") {
-          new UIntRep(innerTypeName, range, baseTypeName = subtypeName)
+          return VariableOpaqueRep(typeName, value.get)
         }
         else {
-          new UHyperRep(innerTypeName, range, baseTypeName = subtypeName)
+          return VariableOpaqueRep(typeName)
         }
-      case "hyper" => new HyperRep(innerTypeName, range, baseTypeName = subtypeName)
-      case "float" => new FloatRep(innerTypeName, range, baseTypeName = subtypeName)
-      case "double" => new DoubleRep(innerTypeName, range, baseTypeName = subtypeName)
-      case "quadruple" => new QuadRep(innerTypeName, range, baseTypeName = subtypeName)
-      case "bool" => new BoolRep(innerTypeName, baseTypeName = subtypeName)
+
+      case "string" =>
+        val hasMaxSize = ctx.value() != null
+        if (hasMaxSize) {
+          return StringRep(typeName, resolveValue(ctx.value().getText, symbolTable).longValue(), baseTypeName = subtypeName)
+        }
+        else {
+          return StringRep(typeName, baseTypeName = subtypeName)
+        }
+      case "int" => IntRep(innerTypeName, range, baseTypeName = subtypeName)
+      case "unsigned" =>
+        if (ctx.type_specifier().stop.getText == "int") {
+          UIntRep(innerTypeName, range, baseTypeName = subtypeName)
+        }
+        else {
+          UHyperRep(innerTypeName, range, baseTypeName = subtypeName)
+        }
+      case "hyper" => HyperRep(innerTypeName, range, baseTypeName = subtypeName)
+      case "float" => FloatRep(innerTypeName, range, baseTypeName = subtypeName)
+      case "double" => DoubleRep(innerTypeName, range, baseTypeName = subtypeName)
+      case "quadruple" => QuadRep(innerTypeName, range, baseTypeName = subtypeName)
+      case "bool" => BoolRep(innerTypeName, baseTypeName = subtypeName)
       case "enum" =>
         val p = readEnumBody(ctx.type_specifier().enum_type_spec().enum_body())
-        new EnumRep(innerTypeName, p)
+        EnumRep(innerTypeName, p)
       case "struct" =>
-        val components = readStructBody(ctx.type_specifier().struct_type_spec().struct_body())
-        new StructRep(innerTypeName, components)
+        val components = readStructureBody(ctx.type_specifier().struct_type_spec().struct_body())
+        StructRep(innerTypeName, components)
       case rootTypeName: String =>
         // If it matched no known symbol, it is an IDENTIFIER for a previously defined type.
         // MXDR: "typedef rootTypeName typeName;"
-        if (!symbolTable.hasType(rootTypeName)) throw new Error(s"Unknown type ${rootTypeName}")
+        if (!symbolTable.hasType(rootTypeName))
+          throw new Error(s"Unknown type $rootTypeName")
         val rootType = symbolTable.getType[Rep](rootTypeName)
 
         if (!isTypeDef) {
           rootType
-        } else //   <------------------     HEY!!      ----------
+        }
+        else //   <------------------     HEY!!      ----------
           // Note that I'm resisting the temptation to make this a recursive function because
           // this process only ever goes one deep.
           // TODO: Maybe cleaner to add a factory class for numeric types?
           rootType match {
-            case _: IntRep => new IntRep(innerTypeName, range, baseTypeName = subtypeName)
-            case _: UIntRep => new UIntRep(innerTypeName, range, baseTypeName = subtypeName)
-            case _: HyperRep => new HyperRep(innerTypeName, range, baseTypeName = subtypeName)
-            case _: UHyperRep => new UHyperRep(innerTypeName, range, baseTypeName = subtypeName)
-            case _: FloatRep => new FloatRep(innerTypeName, range, baseTypeName = subtypeName)
-            case _: DoubleRep => new DoubleRep(innerTypeName, range, baseTypeName = subtypeName)
-            case _: BoolRep => new BoolRep(innerTypeName, baseTypeName = subtypeName)
-            case o: FixedOpaqueRep => new FixedOpaqueRep(innerTypeName, o.bytes)
-            case o: VariableOpaqueRep => new VariableOpaqueRep(innerTypeName, o.maxBytes)
-            case a: FixedArrayRep => new FixedArrayRep(innerTypeName, a.size, a.elementType)
-            case a: VariableArrayRep => new VariableArrayRep(innerTypeName, a.elementType, a.maxSize)
-            case _: QuadRep => new QuadRep(innerTypeName, range, baseTypeName = subtypeName)
-            case _: StringRep => throw new Error("Not sure what should happen here")
-            case _: TimeRep => new TimeRep(innerTypeName, baseTypeName = subtypeName)
-            case _: TimeSpanRep => new TimeSpanRep(innerTypeName, baseTypeName = subtypeName)
-            case _: MStructRep => throw new Error("Merc doesn't support subtyping message types.")
-            case s: StructRep => new StructRep(innerTypeName, s.components)
-            case e: EnumRep => new EnumRep(innerTypeName, e.values)
-            case _ => throw new Error(s"Unimplemented type as base type in declaration ${ctx.getText}")
+            case _: IntRep => IntRep(innerTypeName, range, baseTypeName = subtypeName)
+            case _: UIntRep => UIntRep(innerTypeName, range, baseTypeName = subtypeName)
+            case _: HyperRep => HyperRep(innerTypeName, range, baseTypeName = subtypeName)
+            case _: UHyperRep => UHyperRep(innerTypeName, range, baseTypeName = subtypeName)
+            case _: FloatRep => FloatRep(innerTypeName, range, baseTypeName = subtypeName)
+            case _: DoubleRep => DoubleRep(innerTypeName, range, baseTypeName = subtypeName)
+            case _: BoolRep => BoolRep(innerTypeName, baseTypeName = subtypeName)
+            case o: FixedOpaqueRep => FixedOpaqueRep(innerTypeName, o.bytes)
+            case o: VariableOpaqueRep => VariableOpaqueRep(innerTypeName, o.maxBytes)
+            case a: FixedArrayRep => FixedArrayRep(innerTypeName, a.size, a.elementType)
+            case a: VariableArrayRep => VariableArrayRep(innerTypeName, a.elementType, a.maxSize)
+            case _: QuadRep => QuadRep(innerTypeName, range, baseTypeName = subtypeName)
+            case _: StringRep =>
+              throw new Error("Not Implemented: What should happen here?")
+            case _: TimeRep => TimeRep(innerTypeName, baseTypeName = subtypeName)
+            case _: TimeSpanRep => TimeSpanRep(innerTypeName, baseTypeName = subtypeName)
+            case _: MStructRep =>
+              throw new Error("Merc doesn't support subtyping message types.")
+            case s: StructRep => StructRep(innerTypeName, s.components)
+            case e: EnumRep => EnumRep(innerTypeName, e.values)
+            case _ =>
+              throw new Error(s"Unimplemented type as base type in declaration ${ctx.getText}")
           }
     }
 
     // Is the declaration for an array?
-    if (ctx.children.contains(ctx.RANGLE())) {
+    if (ctx.children.contains(ctx.RANGLE)) {
       if (ctx.value() == null) {
-        new VariableArrayRep(typeName, typeRep)
-      } else {
-        new VariableArrayRep(typeName, typeRep, anonymousConstant[IntegralRep](resolveValue(ctx.value().getText, symbolTable).toString))
+        VariableArrayRep(typeName, typeRep)
       }
-    } else if (ctx.children.contains(ctx.RBRACKET())) {
-      new FixedArrayRep(typeName, anonymousConstant[IntegralRep](resolveValue(ctx.value().getText, symbolTable).toString), typeRep)
-    } else typeRep
+      else {
+        VariableArrayRep(typeName, typeRep, anonymousConstant[IntegralRep](resolveValue(ctx.value().getText, symbolTable).toString))
+      }
+    }
+    else if (ctx.children.contains(ctx.RBRACKET)) {
+      FixedArrayRep(typeName, anonymousConstant[IntegralRep](resolveValue(ctx.value().getText, symbolTable).toString), typeRep)
+    }
+    else typeRep
   }
 
   /**
-   * Reads an enum_body and creates a rep obj to
-   * represent its components.
-   * @param ctx
-   * @return
+   * Reads an enum_body and creates a Rep obj to represent its enumerators.
+   * @param ctx The Enum_bodyContext to process.
+   * @return A list of enumerators along with their associated values (if any).
    */
-  def readEnumBody(ctx: Enum_bodyContext): List[EnumValue] = {
+  private def readEnumBody(ctx: Enum_bodyContext): List[EnumValue] = {
     var result = List[EnumValue]()
 
-    val i = ctx.IDENTIFIER().size
-    if (ctx.children.contains(ctx.EQUALS())) {
+    val i = ctx.IDENTIFIER.size
+    if (ctx.children.contains(ctx.EQUALS)) {
       for (x <- 0 until i) {
         val token = ctx.IDENTIFIER(x).getSymbol
         reportIfReserved(token)
 
         val name = ctx.IDENTIFIER(x).getText
-        val value = ctx.value(x).CONSTANT().getText
-        result = result.:+(new EnumValue(name, Some(value)))
+        val value = ctx.value(x).CONSTANT.getText
+        // TODO: Use cons followed by reverse to speed this up.
+        result = result :+ new EnumValue(name, Some(value))
       }
     }
     else {
@@ -278,7 +285,8 @@ class SymbolTablePopulator(
         reportIfReserved(token)
 
         val name = ctx.IDENTIFIER(x).getText
-        result = result.:+(new EnumValue(name, None))
+        // TODO: See above.
+        result = result :+ new EnumValue(name, None)
       }
     }
     result
@@ -293,23 +301,24 @@ class SymbolTablePopulator(
   }
 
   /**
-   * Reads a range constraint producing a range constraint
-   * object.
-   * @param ctx
+   * Reads a range constraint producing a range constraint object.
+   * @param ctx The Range_constraintContext to process.
    * @param typeRep The type to assign to the endpoints of the range.
-   * @return
+   * @return A range constraint object that represents the given range.
    */
   private def readRangeConstraint(ctx: Range_constraintContext, typeRep: NumericRep): RangeConstraint = {
 
     val lowerBound: ConstRep[NumericRep] = if (ctx.constLowerBound != null) {
       new ConstRep[NumericRep](null, ctx.constLowerBound.getText, false, typeRep.typeName, Some(typeRep))
-    } else { //ctx.varLowerBound != null
+    }
+    else { //ctx.varLowerBound != null
       new ConstRep[NumericRep](null, ctx.varLowerBound.getText, true, typeRep.typeName, Some(typeRep))
     }
 
     val upperBound: ConstRep[NumericRep] = if (ctx.constUpperBound != null) {
       new ConstRep[NumericRep](null, ctx.constUpperBound.getText, false, typeRep.typeName, Some(typeRep))
-    } else { //ctx.varUpperBound != null
+    }
+    else { //ctx.varUpperBound != null
       new ConstRep[NumericRep](null, ctx.varUpperBound.getText, true, typeRep.typeName, Some(typeRep))
     }
 
@@ -322,127 +331,122 @@ class SymbolTablePopulator(
 
     // TODO: Check that the provided endpoints are of an acceptable type
     // This includes 1 vs 1.0 and typed constants and sign on unsigned types.
-
-    new RangeConstraint(lowerBound, upperBound)
+    RangeConstraint(lowerBound, upperBound)
   }
 
   /**
    * Adds the type to the symbol table
-   * @param ctx
+   * @param ctx The Basic_TypeDefContext to process.
    */
   override def visitBasic_TypeDef(ctx: Basic_TypeDefContext): Unit = {
     // We need the type of the declaration to infer the type of the range end points
     val initialTypeGuess = readDeclarationType(ctx.declaration, None, None, isTypeDef=true)
-
     if (initialTypeGuess == VoidRep) {
       return
     }
 
-    val token = ctx.declaration().IDENTIFIER().getSymbol
+    val token = ctx.declaration.IDENTIFIER.getSymbol
     reportIfReserved(token)
-
-    val name = ctx.declaration().IDENTIFIER().getText
+    val name = ctx.declaration.IDENTIFIER.getText
 
     // If the type has a value, it will not also have a range or be an array
-//    if (ctx.declaration().children.contains(ctx.declaration().CONSTANT())) {
-//      val constValue = ctx.declaration().CONSTANT().getText
-//      val typeRep = readDeclarationType(ctx.declaration(), None)
+//    if (ctx.declaration.children.contains(ctx.declaration.CONSTANT) {
+//      val constValue = ctx.declaration.CONSTANT.getText
+//      val typeRep = readDeclarationType(ctx.declaration, None)
 //      symbolTable.addType(name, typeRep, constValue)
 //      return
 //    }
 
     val subtype: Option[String] = if (ctx.subtype_spec != null) {
       Some(ctx.subtype_spec.typeName.getText)
-    } else None
+    }
+    else None
 
-    val rangeConstraint: Option[RangeConstraint] = if (ctx.range_constraint() != null){
-      Some(readRangeConstraint(ctx.range_constraint(), initialTypeGuess.asInstanceOf[NumericRep]))
-    } else None
+    val rangeConstraint: Option[RangeConstraint] = if (ctx.range_constraint != null){
+      Some(readRangeConstraint(ctx.range_constraint, initialTypeGuess.asInstanceOf[NumericRep]))
+    }
+    else None
 
-
-    val typeRep = readDeclarationType(ctx.declaration(), rangeConstraint, subtype, isTypeDef=true)
+    val typeRep = readDeclarationType(ctx.declaration, rangeConstraint, subtype, isTypeDef=true)
     symbolTable.addType(name, typeRep)
   }
 
   /**
-   * Adds the type to the symbol table
-   * @param ctx
-   * @return
+   * Adds the type to the symbol table.
+   *
+   * @param ctx The Enum_TypeDefContext to process.
    */
   override def visitEnum_TypeDef(ctx: Enum_TypeDefContext): Unit = {
-    val token = ctx.IDENTIFIER().getSymbol
+    val token = ctx.IDENTIFIER.getSymbol
     reportIfReserved(token)
 
-    val name = ctx.IDENTIFIER().getText
-    val components = readEnumBody(ctx.enum_body())
-    symbolTable.addType(name, new EnumRep(Some(name), components))
+    val name = ctx.IDENTIFIER.getText
+    val components = readEnumBody(ctx.enum_body)
+    symbolTable.addType(name, EnumRep(Some(name), components))
   }
 
   /**
-   * Adds the type to the symbol table
-   * @param ctx
-   * @return
+   * Adds the type to the symbol table.
+   *
+   * @param ctx The Struct_TypeDefContext to process.
    */
   override def visitStruct_TypeDef(ctx: Struct_TypeDefContext): Unit = {
-    val token = ctx.IDENTIFIER().getSymbol
+    val token = ctx.IDENTIFIER.getSymbol
     reportIfReserved(token)
 
-    val name = ctx.IDENTIFIER().getText
-    val components = readStructBody(ctx.struct_body())
-    val parsedType = new StructRep(Some(name), components)
+    val name = ctx.IDENTIFIER.getText
+    val components = readStructureBody(ctx.struct_body)
+    val parsedType = StructRep(Some(name), components)
     symbolTable.addType(name, parsedType)
   }
 
   /**
-   * Adds the type to the symbol table
+   * Adds the type to the symbol table.
    *
-   * @param ctx
-   * @return
+   * @param ctx The Union_TypeDefContext to process.
    */
   override def visitUnion_TypeDef(ctx: Union_TypeDefContext): Unit = {
-    val token = ctx.IDENTIFIER().getSymbol
+    val token = ctx.IDENTIFIER.getSymbol
     reportIfReserved(token)
 
-    val name = ctx.IDENTIFIER().getText
-    //TODO
+    val name = ctx.IDENTIFIER.getText
+    //TODO: Finish me!
   }
 
   /**
-   * Adds the type to the symbol table
+   * Adds the type to the symbol table.
    *
-   * @param ctx
-   * @return
+   * @param ctx The Message_TypeDefContext to process.
    */
   override def visitMessage_TypeDef(ctx: Message_TypeDefContext): Unit = {
-    val token = ctx.IDENTIFIER().getSymbol
+    val token = ctx.IDENTIFIER.getSymbol
     reportIfReserved(token)
 
-    val name = ctx.IDENTIFIER().getText
-
-    val components = readStructBody(ctx.struct_body())
-
+    val name = ctx.IDENTIFIER.getText
+    val components = readStructureBody(ctx.struct_body)
     val direction = if (ctx.children.contains(ctx.LARROW))
       MessageDirection.Out
-    else MessageDirection.In
+    else
+      MessageDirection.In
 
     val invariants: List[String] = if (ctx.condition != null)
       readMessageInvariants(ctx.condition)
-    else (new ListBuffer[String]()).toList
+    else
+      new ListBuffer[String]().toList
 
     symbolTable.addType(name, new MStructRep(Some(name), components, direction, invariants))
   }
 
   /**
-   * Reads the given type definition returning a list of type invariants
-   * specified by the user.
+   * Reads the given type definition returning a list of type invariants specified by the user.
    *
-   * @param ctx
+   * @param ctx The ConditionContext to process.
    * @return List of expression strings.
    */
   private def readMessageInvariants(ctx: ConditionContext): List[String] = {
     var result = List[String]()
 
-    for (i <- 0 until ctx.expression.size()) {
+    for (i <- 0 until ctx.expression.size) {
       if (ctx.expression(i).children.contains(ctx.expression(i).GOE)) {
         result = (ctx.expression(i).IDENTIFIER(0).getText + " " +
           ctx.expression(i).GOE.getText + " " +
@@ -469,36 +473,32 @@ class SymbolTablePopulator(
           ctx.expression(i).IDENTIFIER(1).getText) :: result
       }
     }
-
-
     result
   }
 
   /**
-   * Reads the line's declaration, storing the result in
-   * the symbol table.
+   * Reads the line's declaration, storing the result in the symbol table.
    */
   override def visitLine(ctx: LineContext): Unit = {
-    val decl = ctx.declaration()
+    val declaration = ctx.declaration
 
-    val name: String = if (decl.IDENTIFIER != null) {
-      decl.IDENTIFIER().getText
+    val name: String = if (declaration.IDENTIFIER != null) {
+      declaration.IDENTIFIER.getText
     }
     else {
-      decl.VOID().getText
+      declaration.VOID.getText
     }
-    val token = decl.IDENTIFIER().getSymbol
+    val token = declaration.IDENTIFIER().getSymbol
     reportIfReserved(token)
 
-    val value: String = if (decl.CONSTANT != null) {
-      decl.CONSTANT().getText
+    val value: String = if (declaration.CONSTANT != null) {
+      declaration.CONSTANT().getText
     }
     else {
       "null"
     }
 
-    val typeRep = readDeclarationType(decl, None, None, isTypeDef=true)
-
+    val typeRep = readDeclarationType(declaration, None, None, isTypeDef=true)
     symbolTable.addType(name, typeRep)
   }
 
@@ -509,18 +509,16 @@ class SymbolTablePopulator(
     reportIfReserved(ctx.name)
 
     val name = ctx.name.getText
-
-    val value = ctx.CONSTANT().getText
-
+    val value = ctx.CONSTANT.getText
     val typeName: Option[String] = if (ctx.typeName != null) {
       Some(ctx.typeName.getText)
-    } else None
+    }
+    else None
 
     val typeRep: Option[Rep] = if (ctx.typeName != null) {
       Some(symbolTable.getType[NumericRep](typeName.get))
-    } else {
-      None
     }
+    else None
 
     symbolTable.addConstant(name, new ConstRep(Some(name), value, false, typeName, typeRep))
   }
