@@ -37,14 +37,14 @@ class MXDRTree {
   }
 
   /**
-   * Gets a list of all the items in the MXDR file that
-   * are covariant to the given type in the order they were
-   * added.
+   * Gets a list of all the items in the MXDR file. In Eric's formulation this method
+   * was generic and intended to only return items of a particular subtype of MXDREntity.
+   * However, Merc only uses this method to get the MXDREntities in general. There were
+   * complications in doing what Eric intended due to erasure. If we need that ability
+   * later, we can revisit the matter.
    */
-  def getItems[T <: MXDREntity](): List[T] = {
-    val result = storage.filter(rep => rep.isInstanceOf[T]).map(rep => rep.asInstanceOf[T]).toList
-    assert(result.forall(_.isInstanceOf[T]))
-    result
+  def getItems: List[MXDREntity] = {
+    storage.toList
   }
 
   /**

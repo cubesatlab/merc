@@ -161,7 +161,7 @@ class SpecificationGenerator(
     printModuleMetadata()
     println()
 
-    for (entityType <- mxdrTree.getItems[MXDREntity]()) {
+    for (entityType <- mxdrTree.getItems) {
       val symbol = entityType match {
         case x: Rep =>
           x.typeName.get

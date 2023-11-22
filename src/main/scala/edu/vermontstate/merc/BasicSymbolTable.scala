@@ -168,12 +168,16 @@ class BasicSymbolTable extends SymbolTable {
    *                                    with the correct type.
    */
   def getType[T <: Rep](symbol: String): T = {
-    val result = types(symbol)
-
-    if (!result.isInstanceOf[T])
-      throw new UnknownObjectNameException(s"$symbol is not the name of an object")
-
-    result.asInstanceOf[T]
+    try {
+      types(symbol).asInstanceOf[T]
+    }
+    // Translate the exceptions to more meaningful ones.
+    catch {
+      case _: NoSuchElementException =>
+        throw new UnknownObjectNameException(s"$symbol is not the name of an object.")
+      case _: ClassCastException =>
+        throw new UnknownObjectNameException(s"$symbol does not have the expected type.")
+    }
   }
 
   /**
@@ -184,18 +188,17 @@ class BasicSymbolTable extends SymbolTable {
    * @return The found constant.
    */
   def getConstant[T <: Rep](symbol: String): ConstRep[T] = {
-    if (!constants.contains(symbol)) {
-      throw new UnknownObjectNameException(s"Symbol $symbol is not a known constant.")
+    try {
+      constants(symbol).asInstanceOf[ConstRep[T]]
     }
-
-    val result = constants(symbol)
-
-    if (!result.isInstanceOf[ConstRep[T]])
-      throw new UnknownObjectNameException(s"Symbol $symbol does not refer to a constant of the requested type")
-
-    result.asInstanceOf[ConstRep[T]]
+    // Translate the exceptions to more meaningful ones.
+    catch {
+      case _: NoSuchElementException =>
+        throw new UnknownObjectNameException(s"$symbol is not the name of a constant.")
+      case _: ClassCastException =>
+        throw new UnknownObjectNameException(s"$symbol is not a constant of the expected type.")
+    }
   }
-
 
   /**
    * Returns the size of the array in the struct.

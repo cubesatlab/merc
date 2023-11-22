@@ -104,7 +104,7 @@ class BodyGenerator(
   private def generateBulk(): Unit = {
     println("procedure Free is new Ada.Unchecked_Deallocation(String, String_Ptr);")
     println("procedure Free is new Ada.Unchecked_Deallocation(Octet_Array, Octet_Array_Ptr);")
-    mxdrTree.getItems[MXDREntity]().foreach {
+    mxdrTree.getItems.foreach {
       case x: MStructRep =>
         handleMessage(x)
       case _ =>

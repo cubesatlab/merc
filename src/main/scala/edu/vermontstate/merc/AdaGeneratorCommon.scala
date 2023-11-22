@@ -203,7 +203,7 @@ object AdaGeneratorCommon {
    * by the Ada generators.
    */
   def assertMXDRTreeAcceptableForAda(mxdrTree: MXDRTree): Unit = {
-    mxdrTree.getItems[MXDREntity]().foreach(item => assertEntityIsAcceptableForAda(item, ""))
+    mxdrTree.getItems.foreach(item => assertEntityIsAcceptableForAda(item, ""))
   }
 
   /**
